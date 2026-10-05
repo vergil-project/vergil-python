@@ -1,0 +1,26 @@
+# >>> vergil-managed: base (managed by vrg-gitignore-sync; do not edit) >>>
+*.swp
+*.swo
+*~
+*.bak
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+*.log
+.venv/
+.worktrees/
+.vergil/
+.superpowers/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+build/
+dist/
+coverage.xml
+junit.xml
+licenses.json
+docs/site/site/
+node_modules/
+# <<< vergil-managed <<<
