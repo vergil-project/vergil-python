@@ -1,0 +1,22 @@
+name: CD
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  attestations: write
+  contents: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+
+  release:
+    if: github.ref == 'refs/heads/main'
+    uses: vergil-project/vergil-actions/.github/workflows/cd-release.yml@v2.1
+    with:
+      language: base
+      container-tag: "latest"
