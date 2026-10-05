@@ -1,0 +1,16 @@
+[project]
+repository-type = "infrastructure"
+versioning-scheme = "semver"
+branching-model = "library-release"
+release-model = "tagged-release"
+
+[ci]
+versions = ["latest"]
+integration-tests = false
+
+[publish]
+release = true
+docs = false
+
+[dependencies]
+vergil = "v2.1"
