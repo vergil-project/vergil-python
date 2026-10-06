@@ -46,3 +46,8 @@ jobs:
       language:
       run-release: ${{ inputs.run-release != 'false' }}
       container-suffix: base
+
+  # Build and install-test the runtime .deb/.rpm on every target (spec §8.1).
+  # Surfaces as the `package / evidence` gate.
+  package:
+    uses: vergil-project/vergil-actions/.github/workflows/ci-package.yml@v2.1

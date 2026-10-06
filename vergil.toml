@@ -14,3 +14,14 @@ docs = false
 
 [dependencies]
 vergil = "v2.1"
+
+[package]
+builder = "staged"
+vendor = "vergil"
+name = "vergil-python3.14.8"
+version = "3.14.8+20261003"
+summary = "Pinned CPython 3.14.8 (python-build-standalone 20261003) for vergil products"
+smoke = "/opt/vergil/python/3.14.8/bin/python3.14 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
+
+[package.staged]
+build-command = "packaging/build.sh"

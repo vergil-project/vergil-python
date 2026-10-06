@@ -1,0 +1,18 @@
+# The pinned python-build-standalone (PBS) runtime packaged by this repo
+# (spec §6.2, decision D7). The CPython patch is exact; the PBS build floats.
+#
+# Source of every value: the PBS release's SHA256SUMS asset,
+#   https://github.com/astral-sh/python-build-standalone/releases/download/<pbs_tag>/SHA256SUMS
+# for the asset
+#   cpython-<cpython>+<pbs_tag>-<triple>-install_only_stripped.tar.gz
+#
+# Changing any value here also changes [package].name/version/summary/smoke in
+# vergil.toml; packaging/build.sh fails the build if the two disagree. See
+# docs/runtime-package-pattern.md.
+
+cpython = "3.14.8"
+pbs_tag = "20261003"
+
+[sha256]
+x86_64 = "d9ec7a6935ade8b671a57ebaf111083d7314eab8dae5071d167054dadd2b97d6"
+aarch64 = "ece2bf3d4b47c80c2403c5f32fa51a9458abaee93c10def8acafb5f45163e77d"

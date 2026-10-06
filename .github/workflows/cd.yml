@@ -20,3 +20,6 @@ jobs:
     with:
       language: base
       container-tag: "latest"
+    # The package-released dispatch to vergil-project/packages uses the org
+    # GitHub App (APP_CLIENT_ID / APP_PRIVATE_KEY; spec §8.2).
+    secrets: inherit
