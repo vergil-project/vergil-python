@@ -20,3 +20,10 @@ jobs:
     with:
       language: base
       container-tag: "latest"
+    # The package-released dispatch to vergil-project/packages uses the org
+    # GitHub App (APP_CLIENT_ID / APP_PRIVATE_KEY; spec §8.2). Pass only those
+    # (least privilege; Semgrep secrets-inherit). Signing secrets come from the
+    # main-only `package-signing` environment inside cd-release.
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
