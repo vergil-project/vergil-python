@@ -20,3 +20,10 @@ jobs:
     with:
       language: base
       container-tag: "latest"
+    # `inherit` is required: environment secrets reach a job in a cross-repo
+    # reusable workflow only when the caller uses `secrets: inherit` (probe in
+    # vergil-project/packages#6). With an explicit map, cd-release's
+    # package-sign job sees an empty PACKAGE_SIGNING_KEY. The callee is
+    # first-party (same org); it also uses APP_CLIENT_ID / APP_PRIVATE_KEY for
+    # the package-released dispatch (spec §8.2).
+    secrets: inherit  # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
