@@ -14,7 +14,11 @@ Pinned CPython runtime (python-build-standalone) packaged as
 
 ## Status
 
-Early development (epic `vergil-project/.github#356`).
+Released. `vergil-python3.14.8` (version `3.14.8+20261003`) shipped in
+[v1.0.0](https://github.com/vergil-project/vergil-python/releases/tag/v1.0.0)
+and is served, signed, from the vergil package repository at
+<https://vergil-project.github.io/packages>. Background: epic
+`vergil-project/.github#356`.
 
 ## Overview
 
