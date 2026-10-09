@@ -15,6 +15,7 @@ Background: epic `vergil-project/.github#356`, spec §4.1, §6.2 and decision D7
 - [Never on PATH, never pip-installable](#never-on-path-never-pip-installable)
 - [Provenance and the build](#provenance-and-the-build)
 - [Changing the pin](#changing-the-pin)
+- [Releasing](#releasing)
 - [Never re-release an unchanged name and version](#never-re-release-an-unchanged-name-and-version)
 - [Which languages the pattern applies to](#which-languages-the-pattern-applies-to)
 
@@ -127,6 +128,27 @@ Never type a checksum by hand from anywhere else.
 Products move to a new patch on their own schedule, by changing
 `[package.python].runtime` in their own `vergil.toml`. The previous patch's
 package stays in the index while a retained product still depends on it.
+
+## Releasing
+
+A release runs `.github/workflows/cd.yml` on `main`, which calls the
+vergil-actions `cd-release.yml` reusable workflow:
+
+- **Signing happens in the `package-signing` environment.** Its
+  deployment-branch policy admits only `main` (spec §7.4), and it holds
+  `PACKAGE_SIGNING_KEY` and `PACKAGE_SIGNING_PASSPHRASE`. `cd-release`'s
+  `package-sign` job signs each `.rpm` and attests the provenance of every
+  package there before the release attaches them. The `.deb` files are
+  covered by the signed apt index.
+- **`cd.yml` must pass `secrets: inherit`**, with its
+  `# nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit`
+  comment. Environment secrets reach a job in a cross-repo reusable workflow
+  only through `inherit`. With an explicit `secrets:` map, `package-sign` sees
+  an empty `PACKAGE_SIGNING_KEY` and fails.
+- **The index is rebuilt after the release.** Once a new release is created,
+  `cd-release` dispatches `package-released` to `vergil-project/packages`. Its
+  `publish-index` workflow rebuilds, re-signs and deploys the apt/dnf index.
+  A missed dispatch is picked up by that workflow's weekly reconcile.
 
 ## Never re-release an unchanged name and version
 
