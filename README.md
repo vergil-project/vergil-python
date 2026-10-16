@@ -77,6 +77,7 @@ sudo dnf install vergil-python3.14.8   # RHEL
 | `scripts/dev/update_deps.py` | The hook's logic: finds the newest PBS build and rewrites `runtime.toml` and `vergil.toml` `[package]` together. |
 | `tests/test_update_deps.py` | Offline unit tests for `update_deps.py`. |
 | `tests/check-update-deps.sh` | Runs those tests in the dev container. |
+| `scripts/bin/validate-custom` | Repo-specific checks that `vrg-validate` runs as its `custom` stage; runs `tests/check-update-deps.sh`. |
 | `docs/runtime-package-pattern.md` | Why the runtime is packaged this way, and how to change it. |
 
 ## License
