@@ -11,8 +11,8 @@
 # docs/runtime-package-pattern.md.
 
 cpython = "3.14.8"
-pbs_tag = "20261003"
+pbs_tag = "20261013"
 
 [sha256]
-x86_64 = "d9ec7a6935ade8b671a57ebaf111083d7314eab8dae5071d167054dadd2b97d6"
-aarch64 = "ece2bf3d4b47c80c2403c5f32fa51a9458abaee93c10def8acafb5f45163e77d"
+x86_64 = "d8faa1b588506b9e3e5a3f57807bb056d534a1641a6b10d15b6ea3f0b413b960"
+aarch64 = "d8ae14f303d3971431184cf423ae5467202de2bc19bf6491a490250b87647d4b"
