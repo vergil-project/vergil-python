@@ -109,7 +109,39 @@ eight targets and runs the `smoke` command from `vergil.toml`, which imports
 
 ## Changing the pin
 
-Every pin change is one reviewed PR. Pick the newest PBS release that ships the
+Every pin change is one reviewed PR. Normally the PR is opened for you.
+
+### The dependency-update hook
+
+`vergil.toml` names `scripts/dev/update-deps.sh` as this repository's
+`[dependency-update].hook`. Every `vrg-release` runs it in its dependency-update
+stage, after the release is published, and the change it makes lands on
+`develop` as a dependency-update PR for review. The hook runs
+`scripts/dev/update_deps.py`, which:
+
+1. takes the newest python-build-standalone release (the target of
+   `releases/latest`);
+2. reads that release's `SHA256SUMS` and takes the newest CPython patch of the
+   **current** minor that it ships as `install_only_stripped` for both
+   `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`;
+3. rewrites `runtime.toml` (`cpython`, `pbs_tag` and both `sha256` values) and
+   `vergil.toml` `[package]` (`name`, `version`, `summary` and the interpreter
+   path in `smoke`) together, so `packaging/build.sh`'s consistency check
+   holds. When the pin is already current it changes nothing;
+4. reports a newer stable CPython minor, if the release ships one, in the
+   release's dependency report as held back. It never bumps the minor.
+
+It fails, before writing either file, if the newest PBS release is older than
+the pinned tag or ships only an older patch than the pinned one (a downgrade),
+if `SHA256SUMS` lists two different checksums for the same archive, if the
+chosen patch is missing an archive for either architecture, or if either file
+does not have the layout it expects. Its offline unit tests are
+`tests/test_update_deps.py`, run by `tests/check-update-deps.sh`.
+
+### By hand
+
+Change the pin by hand when the hook cannot, and always for a new CPython
+minor, which is a new runtime. Pick the newest PBS release that ships the
 wanted patch as `install_only_stripped` for both `x86_64-unknown-linux-gnu` and
 `aarch64-unknown-linux-gnu`, and take both checksums from its `SHA256SUMS`.
 Never type a checksum by hand from anywhere else.
@@ -124,6 +156,10 @@ Never type a checksum by hand from anywhere else.
 - `runtime.toml`: `cpython`, `pbs_tag` and both `sha256` values.
 - `vergil.toml` `[package]`: `name`, `version`, `summary`, and the interpreter
   path in `smoke`.
+
+**A new CPython minor** (a new runtime) changes the same values as a new patch,
+and also the interpreter name `python<X.Y>` in `smoke`. The hook only reports a
+new minor, so this change is always made by hand.
 
 Products move to a new patch on their own schedule, by changing
 `[package.python].runtime` in their own `vergil.toml`. The previous patch's
@@ -164,6 +200,13 @@ architecture but different bytes as a hard error, naming both releases (spec
 
 - **Only release this repository when the pin changes.** Documentation or
   workflow changes merge to `develop` and ship with the next pin change.
+- **The next pin usually arrives right after a release.** The release's
+  dependency-update stage opens a PR that moves the pin, so the next pin
+  normally lands on `develop` as that PR, and `vrg-release` refuses to start
+  while a dependency-update PR is still open (unless given
+  `--allow-pending-deps`). Merge it before the next release.
+  If the hook found the pin already current, there is no new pin, and the
+  next release has to wait for one.
 - If a packaging change other than the pin must ship (for example a fix to
   `packaging/build.sh` that changes the installed tree), it still needs a new
   package version. Take the next PBS rebuild of the same patch, or move to a new
