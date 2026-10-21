@@ -2,10 +2,10 @@
 # scripts/bin/validate-custom — repo-specific validation, auto-discovered by vrg-validate
 # (vergil_tooling.bin.vrg_validate._find_custom_validator looks for exactly this path)
 # and run as the `custom` stage inside the dev container vrg-container-run launches.
-# Runs the repo's tests/check-*.sh gates — currently the offline unit tests for the
-# dependency-update hook (scripts/dev/update_deps.py). fail-defer: run everything,
-# report all failures, exit nonzero if any failed. A missing check script or a missing
-# required tool is an error, never a silent pass.
+# Runs the repo's tests/check-*.sh gates: the offline unit tests for the
+# dependency-update hook (scripts/dev/update_deps.py) and for packaging/build.sh.
+# fail-defer: run everything, report all failures, exit nonzero if any failed. A
+# missing check script or a missing required tool is an error, never a silent pass.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "${HERE}/../.." && pwd)"
@@ -14,10 +14,10 @@ fail=0
 run() { echo "→ $*"; "$@" || fail=1; }
 
 # Tools the checks need. Absent from the container = loud failure, not a skip.
-required_tools=(uv)
+required_tools=(uv sha256sum tar)
 # The gating check scripts under tests/. Listed explicitly so a deleted or renamed
 # script fails loud instead of silently dropping out of the gate.
-checks=(check-update-deps)
+checks=(check-update-deps check-build)
 
 for tool in "${required_tools[@]}"; do
   if ! command -v "$tool" >/dev/null 2>&1; then

@@ -7,9 +7,11 @@
 #   VRG_STAGING_ROOT  an empty directory standing in for /
 #   VRG_TARGET_ARCH   amd64 | arm64
 #
-# The result is $VRG_STAGING_ROOT/opt/vergil/python/<cpython>/ holding the PBS
-# install_only_stripped tree plus a PEP 668 EXTERNALLY-MANAGED marker. Any
-# mismatch (config drift, unknown arch, checksum, archive layout) is fatal.
+# The package is one runtime per CPython series (epic vergil-project/.github#407,
+# spec §7): the result is $VRG_STAGING_ROOT/opt/vergil/python/<series>/ holding
+# the PBS install_only_stripped tree plus a PEP 668 EXTERNALLY-MANAGED marker.
+# Any mismatch (config drift, a cpython outside the series, unknown arch,
+# checksum, archive layout) is fatal.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -40,16 +42,27 @@ print(value)
 ' "$@"
 }
 
+series=$(read_toml runtime.toml series)
 cpython=$(read_toml runtime.toml cpython)
 tag=$(read_toml runtime.toml pbs_tag)
 name=$(read_toml vergil.toml package name)
 version=$(read_toml vergil.toml package version)
+smoke=$(read_toml vergil.toml package smoke)
+
+# The series is an x.y, and the pinned cpython is an x.y.z patch within it.
+[[ "$series" =~ ^[0-9]+\.[0-9]+$ ]] \
+  || die "runtime.toml series '$series' is not an x.y CPython series"
+[[ "$cpython" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "${cpython%.*}" = "$series" ]] \
+  || die "runtime.toml cpython '$cpython' is not a patch of series '$series'"
 
 # runtime.toml is the pin; vergil.toml must name the same runtime.
-[ "$name" = "vergil-python${cpython}" ] \
-  || die "vergil.toml [package].name '$name' != 'vergil-python${cpython}' (runtime.toml)"
+interpreter_path="/opt/vergil/python/${series}/bin/python${series}"
+[ "$name" = "vergil-python${series}" ] \
+  || die "vergil.toml [package].name '$name' != 'vergil-python${series}' (runtime.toml series)"
 [ "$version" = "${cpython}+${tag}" ] \
   || die "vergil.toml [package].version '$version' != '${cpython}+${tag}' (runtime.toml)"
+[[ "$smoke " == *"${interpreter_path} "* ]] \
+  || die "vergil.toml [package].smoke does not run ${interpreter_path} (runtime.toml series)"
 
 case "$VRG_TARGET_ARCH" in
   amd64)
@@ -77,13 +90,12 @@ curl -fsSL --retry 3 -o "$work/$archive" "$url"
 roots=$(tar -tzf "$work/$archive" | cut -d/ -f1 | sort -u)
 [ "$roots" = "python" ] || die "unexpected archive top level in $archive: $roots"
 
-dest="$VRG_STAGING_ROOT/opt/vergil/python/${cpython}"
+dest="$VRG_STAGING_ROOT/opt/vergil/python/${series}"
 mkdir -p "$dest"
 tar -xzf "$work/$archive" -C "$dest" --strip-components=1 --no-same-owner
 
-minor="${cpython%.*}"
-interpreter="$dest/bin/python${minor}"
-stdlib="$dest/lib/python${minor}"
+interpreter="$dest/bin/python${series}"
+stdlib="$dest/lib/python${series}"
 [ -x "$interpreter" ] || die "expected interpreter $interpreter is missing"
 [ -d "$stdlib" ] || die "expected stdlib directory $stdlib is missing"
 
@@ -93,4 +105,4 @@ printf '%s\n' \
   'Error=This interpreter is the shared vergil runtime. Install into a product venv, never into the runtime.' \
   >"$stdlib/EXTERNALLY-MANAGED"
 
-echo "build.sh: staged CPython ${cpython} (PBS ${tag}, ${triple}) at ${dest#"$VRG_STAGING_ROOT"}"
+echo "build.sh: staged CPython ${cpython} (series ${series}, PBS ${tag}, ${triple}) at ${dest#"$VRG_STAGING_ROOT"}"
