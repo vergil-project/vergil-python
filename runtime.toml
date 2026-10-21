@@ -1,18 +1,23 @@
-# The pinned python-build-standalone (PBS) runtime packaged by this repo
-# (spec §6.2, decision D7). The CPython patch is exact; the PBS build floats.
+# The python-build-standalone (PBS) runtime packaged by this repo: one package
+# per CPython series, vergil-python<series> at /opt/vergil/python/<series>/
+# (epic vergil-project/.github#407, spec §7). `series` is the x.y; `cpython` is
+# the patch currently built for it and floats within the series, as does the
+# PBS build. Moving `series` to a new x.y is a reviewed PR of its own.
 #
-# Source of every value: the PBS release's SHA256SUMS asset,
+# Source of every value but `series`: the PBS release's SHA256SUMS asset,
 #   https://github.com/astral-sh/python-build-standalone/releases/download/<pbs_tag>/SHA256SUMS
 # for the asset
 #   cpython-<cpython>+<pbs_tag>-<triple>-install_only_stripped.tar.gz
 #
-# Changing any value here also changes [package].name/version/summary/smoke in
-# vergil.toml; packaging/build.sh fails the build if the two disagree. See
+# A new cpython or pbs_tag also changes [package].version/summary in
+# vergil.toml; a new series also changes [package].name/smoke.
+# packaging/build.sh fails the build if the two files disagree. See
 # docs/runtime-package-pattern.md.
 
+series = "3.14"
 cpython = "3.14.8"
-pbs_tag = "20261003"
+pbs_tag = "20261013"
 
 [sha256]
-x86_64 = "d9ec7a6935ade8b671a57ebaf111083d7314eab8dae5071d167054dadd2b97d6"
-aarch64 = "ece2bf3d4b47c80c2403c5f32fa51a9458abaee93c10def8acafb5f45163e77d"
+x86_64 = "d8faa1b588506b9e3e5a3f57807bb056d534a1641a6b10d15b6ea3f0b413b960"
+aarch64 = "d8ae14f303d3971431184cf423ae5467202de2bc19bf6491a490250b87647d4b"

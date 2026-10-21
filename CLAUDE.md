@@ -4,6 +4,10 @@ This file provides guidance to Claude Code when working in this repository.
 
 **Project name**: vergil-python
 
+The runtime pin (`runtime.toml` and `vergil.toml` `[package]`) is moved by the
+dependency-update hook `scripts/dev/update-deps.sh` on every `vrg-release`; see
+`docs/runtime-package-pattern.md`.
+
 ## Validation
 
 ```bash

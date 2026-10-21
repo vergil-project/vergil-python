@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-10-21
+
+### CI
+
+- run the update-deps hook tests via scripts/bin/validate-custom (#19)
+
+### Chores
+
+- repo hook
+- turn off Claude Code co-author attribution (#24)
+
+### Documentation
+
+- describe the dependency-update hook and stop duplicating the runtime pin (#20)
+- list scripts/bin/validate-custom in the repository layout (#22)
+
+### Features
+
+- publish one runtime package per Python series (#27)
+
 ## [1.0.1] - 2026-10-16
 
 ### Documentation

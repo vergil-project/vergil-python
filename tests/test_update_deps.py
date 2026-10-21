@@ -52,6 +52,7 @@ _RUNTIME = (
     "# header comment\n"
     "# cpython = \"0.0.0\" in a comment must survive\n"
     "\n"
+    'series = "3.14"\n'
     'cpython = "3.14.8"\n'
     f'pbs_tag = "{_OLD_TAG}"\n'
     "\n"
@@ -70,10 +71,10 @@ _VERGIL = (
     "[package]\n"
     'builder = "staged"\n'
     'vendor = "vergil"\n'
-    'name = "vergil-python3.14.8"\n'
+    'name = "vergil-python3.14"\n'
     f'version = "3.14.8+{_OLD_TAG}"\n'
     f'summary = "Pinned CPython 3.14.8 (python-build-standalone {_OLD_TAG}) for vergil products"\n'
-    "smoke = \"/opt/vergil/python/3.14.8/bin/python3.14 -c 'import ssl'\"\n"
+    "smoke = \"/opt/vergil/python/3.14/bin/python3.14 -c 'import ssl'\"\n"
     "\n"
     "[package.staged]\n"
     'build-command = "packaging/build.sh"\n'
@@ -116,23 +117,42 @@ class ParseSumsTest(unittest.TestCase):
             ud.parse_sums(_SUMS, "20991231")
 
 
+class CheckSeriesTest(unittest.TestCase):
+    def test_patch_within_series_passes(self):
+        ud.check_series("3.14", "3.14.8")
+        ud.check_series("3.9", "3.9.20")
+
+    def test_series_mismatch_fails(self):
+        for series, cpython in [("3.14", "3.15.0"), ("3.1", "3.14.8"), ("3.14", "3.14"), ("3.14", "3.14.8a1")]:
+            with self.subTest(series=series, cpython=cpython), self.assertRaises(SystemExit):
+                ud.check_series(series, cpython)
+
+    def test_malformed_or_missing_series_fails(self):
+        for series in [None, "", "3", "3.14.8", "three.fourteen", 3.14]:
+            with self.subTest(series=series), self.assertRaises(SystemExit):
+                ud.check_series(series, "3.14.8")
+
+
 class PickTest(unittest.TestCase):
-    def test_newest_patch_of_current_minor_and_newer_minor(self):
-        self.assertEqual(ud.pick("3.14.8", ["3.14.7", "3.14.9", "3.15.1", "3.13.12"]), ("3.14.9", "3.15.1"))
+    def test_newest_patch_within_series_and_newer_minor(self):
+        self.assertEqual(
+            ud.pick("3.14", "3.14.8", ["3.14.7", "3.14.9", "3.15.1", "3.13.12"]), ("3.14.9", "3.15.1")
+        )
 
     def test_no_newer_minor(self):
-        self.assertEqual(ud.pick("3.14.9", ["3.14.9", "3.13.12"]), ("3.14.9", None))
+        self.assertEqual(ud.pick("3.14", "3.14.9", ["3.14.9", "3.13.12"]), ("3.14.9", None))
 
     def test_numeric_not_lexical_ordering(self):
-        self.assertEqual(ud.pick("3.14.9", ["3.14.9", "3.14.10"]), ("3.14.10", None))
+        self.assertEqual(ud.pick("3.14", "3.14.9", ["3.14.9", "3.14.10"]), ("3.14.10", None))
+        self.assertEqual(ud.pick("3.9", "3.9.1", ["3.9.1", "3.10.0"]), ("3.9.1", "3.10.0"))
 
-    def test_current_minor_missing_fails(self):
+    def test_series_missing_fails(self):
         with self.assertRaises(SystemExit):
-            ud.pick("3.14.8", ["3.15.1"])
+            ud.pick("3.14", "3.14.8", ["3.15.1"])
 
     def test_refuses_to_downgrade_the_patch(self):
         with self.assertRaises(SystemExit):
-            ud.pick("3.14.8", ["3.14.7"])
+            ud.pick("3.14", "3.14.8", ["3.14.7"])
 
 
 class RenderRuntimeTest(unittest.TestCase):
@@ -153,43 +173,74 @@ class RenderRuntimeTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ud.render_runtime(_RUNTIME, "3.14.9", _TAG, {"x86_64": "aaa"})
 
+    def test_keeps_series(self):
+        out = ud.render_runtime(_RUNTIME, "3.14.9", _TAG, {"x86_64": "aaa", "aarch64": "bbb"})
+        self.assertIn('\nseries = "3.14"\n', out)
+
+    def test_patch_outside_series_fails(self):
+        with self.assertRaises(SystemExit):
+            ud.render_runtime(_RUNTIME, "3.15.0", _TAG, {"x86_64": "aaa", "aarch64": "bbb"})
+
+    def test_missing_series_fails(self):
+        with self.assertRaises(SystemExit):
+            ud.render_runtime(_RUNTIME.replace('series = "3.14"\n', ""), "3.14.9", _TAG,
+                              {"x86_64": "aaa", "aarch64": "bbb"})
+
 
 class RewritePackageTest(unittest.TestCase):
-    def test_new_patch_rewrites_name_version_summary_smoke_only(self):
-        out = ud.rewrite_package(_VERGIL, "3.14.8", _OLD_TAG, "3.14.9", _TAG)
-        self.assertIn('name = "vergil-python3.14.9"', out)
+    def test_new_patch_rewrites_version_and_summary_only(self):
+        out = ud.rewrite_package(_VERGIL, "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+        self.assertIn('name = "vergil-python3.14"\n', out)
         self.assertIn(f'version = "3.14.9+{_TAG}"', out)
         self.assertIn(f'summary = "Pinned CPython 3.14.9 (python-build-standalone {_TAG}) for vergil products"', out)
-        self.assertIn("/opt/vergil/python/3.14.9/bin/python3.14 -c", out)
+        self.assertIn("/opt/vergil/python/3.14/bin/python3.14 -c", out)
         self.assertIn('vergil = "v2.1"', out)
         self.assertIn('build-command = "packaging/build.sh"', out)
         self.assertNotIn("3.14.8", out)
         self.assertNotIn(_OLD_TAG, out)
+        self.assertEqual(out, _VERGIL.replace("3.14.8", "3.14.9").replace(_OLD_TAG, _TAG))
 
     def test_pbs_rebuild_keeps_name(self):
-        out = ud.rewrite_package(_VERGIL, "3.14.8", _OLD_TAG, "3.14.8", _TAG)
-        self.assertIn('name = "vergil-python3.14.8"', out)
+        out = ud.rewrite_package(_VERGIL, "3.14", "3.14.8", _OLD_TAG, "3.14.8", _TAG)
+        self.assertIn('name = "vergil-python3.14"\n', out)
         self.assertIn(f'version = "3.14.8+{_TAG}"', out)
 
     def test_package_table_first_in_file(self):
         text = _VERGIL[_VERGIL.index("[package]\n"):]
-        out = ud.rewrite_package(text, "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+        out = ud.rewrite_package(text, "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
         self.assertTrue(out.startswith("[package]\n"))
-        self.assertIn('name = "vergil-python3.14.9"', out)
+        self.assertIn(f'version = "3.14.9+{_TAG}"', out)
 
     def test_values_outside_package_table_untouched(self):
         text = _VERGIL + '\n[other]\nnote = "3.14.8 and 20261003"\n'
-        out = ud.rewrite_package(text, "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+        out = ud.rewrite_package(text, "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
         self.assertIn('note = "3.14.8 and 20261003"', out)
 
-    def test_inconsistent_package_table_fails(self):
-        bad = _VERGIL.replace('name = "vergil-python3.14.8"', 'name = "vergil-python3.14.7"')
+    def test_name_not_naming_the_series_fails(self):
+        for name in ["vergil-python3.14.8", "vergil-python3.15", "vergil-python"]:
+            bad = _VERGIL.replace('name = "vergil-python3.14"', f'name = "{name}"')
+            with self.subTest(name=name), self.assertRaises(SystemExit):
+                ud.rewrite_package(bad, "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+
+    def test_smoke_not_running_the_series_interpreter_fails(self):
+        for path in ["/opt/vergil/python/3.14.8/bin/python3.14", "/opt/vergil/python/3.14/bin/python3.15",
+                     "/opt/vergil/python/3.14/bin/python3.14t"]:
+            bad = _VERGIL.replace("/opt/vergil/python/3.14/bin/python3.14", path)
+            with self.subTest(path=path), self.assertRaises(SystemExit):
+                ud.rewrite_package(bad, "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+
+    def test_inconsistent_version_fails(self):
+        bad = _VERGIL.replace(f'version = "3.14.8+{_OLD_TAG}"', f'version = "3.14.7+{_OLD_TAG}"')
         with self.assertRaises(SystemExit):
-            ud.rewrite_package(bad, "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+            ud.rewrite_package(bad, "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+
+    def test_new_patch_outside_series_fails(self):
+        with self.assertRaises(SystemExit):
+            ud.rewrite_package(_VERGIL, "3.14", "3.14.8", _OLD_TAG, "3.15.0", _TAG)
 
     def test_missing_package_table_fails(self):
         with self.assertRaises(SystemExit):
-            ud.rewrite_package("[project]\n", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
+            ud.rewrite_package("[project]\n", "3.14", "3.14.8", _OLD_TAG, "3.14.9", _TAG)
 
 
 class MainTest(unittest.TestCase):
@@ -215,7 +266,8 @@ class MainTest(unittest.TestCase):
         self.assertIn(f'pbs_tag = "{_TAG}"', runtime)
         self.assertIn(f'x86_64 = "{"a" * 64}"', runtime)
         self.assertIn(f'aarch64 = "{"b" * 64}"', runtime)
-        self.assertIn('name = "vergil-python3.14.9"', vergil)
+        self.assertIn('name = "vergil-python3.14"\n', vergil)
+        self.assertIn('series = "3.14"', runtime)
         self.assertIn(f'version = "3.14.9+{_TAG}"', vergil)
         lines = [json.loads(x) for x in self.report.read_text().splitlines()]
         self.assertEqual(len(lines), 1)
@@ -225,6 +277,41 @@ class MainTest(unittest.TestCase):
         self.assertEqual(lines[0]["latest"], "3.15.1")
         self.assertEqual(set(lines[0]), {"source", "name", "current", "latest", "note"})
         self.assertTrue(all(isinstance(v, str) for v in lines[0].values()))
+
+    def test_update_hook_stays_within_series(self):
+        # PBS ships both 3.14.8 and 3.15.0: the hook stays on 3.14.x and only reports 3.15.
+        sums = "\n".join([_line("a" * 64, "3.14.8", _X86), _line("b" * 64, "3.14.8", _ARM),
+                          _line("c" * 64, "3.15.0", _X86), _line("d" * 64, "3.15.0", _ARM)])
+        self.assertEqual(ud.main(root=self.root, fetch=_fetcher(sums=sums)), 0)
+        runtime, vergil = self._files()
+        self.assertIn('series = "3.14"', runtime)
+        self.assertIn('cpython = "3.14.8"', runtime)
+        self.assertIn(f'x86_64 = "{"a" * 64}"', runtime)
+        self.assertNotIn("3.15", runtime)
+        self.assertIn('name = "vergil-python3.14"\n', vergil)
+        self.assertIn(f'version = "3.14.8+{_TAG}"', vergil)
+        self.assertNotIn("3.15", vergil)
+        [entry] = [json.loads(x) for x in self.report.read_text().splitlines()]
+        self.assertEqual((entry["current"], entry["latest"]), ("3.14.8", "3.15.0"))
+
+    def test_series_mismatch_fails_without_fetching_or_writing(self):
+        for runtime in [_RUNTIME.replace('series = "3.14"', 'series = "3.15"'),
+                        _RUNTIME.replace('series = "3.14"\n', ""),
+                        _RUNTIME.replace(f'pbs_tag = "{_OLD_TAG}"', 'pbs_tag = "latest"')]:
+            (self.root / "runtime.toml").write_text(runtime)
+            fetch = _fetcher()
+            with self.subTest(runtime=runtime), self.assertRaises(SystemExit):
+                ud.main(root=self.root, fetch=fetch)
+            self.assertEqual(fetch.calls, [])
+            self.assertEqual(self._files(), (runtime, _VERGIL))
+
+    def test_package_name_mismatch_fails_without_writing(self):
+        bad = _VERGIL.replace('name = "vergil-python3.14"', 'name = "vergil-python3.14.8"')
+        (self.root / "vergil.toml").write_text(bad)
+        with self.assertRaises(SystemExit):
+            ud.main(root=self.root, fetch=_fetcher())
+        self.assertEqual(self._files(), (_RUNTIME, bad))
+        self.assertEqual(self.report.read_text(), "")
 
     def test_already_current_is_a_no_op(self):
         sums = "\n".join([_line("a" * 64, "3.14.8", _X86, tag=_OLD_TAG),
