@@ -1,7 +1,7 @@
 # vergil-python
 
 CPython runtime (python-build-standalone) packaged as one `.deb`/`.rpm` per
-CPython series (`vergil-python3.14`, ...) for vergil products.
+CPython series (`vergil-python3.15`, ...) for vergil products.
 
 ## Table of Contents
 
@@ -65,8 +65,8 @@ dependency. To install it directly, enable the vergil package repository (the
 the package named by `[package].name` in `vergil.toml`, for example:
 
 ```bash
-sudo apt install vergil-python3.14   # Ubuntu
-sudo dnf install vergil-python3.14   # RHEL
+sudo apt install vergil-python3.15   # Ubuntu
+sudo dnf install vergil-python3.15   # RHEL
 ```
 
 ## Repository layout
