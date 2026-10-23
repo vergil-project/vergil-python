@@ -5,7 +5,6 @@ branching-model = "library-release"
 release-model = "tagged-release"
 
 [ci]
-versions = ["latest"]
 integration-tests = false
 
 [publish]
