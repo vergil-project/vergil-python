@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-10-23
+
+### Chores
+
+- repo hook
+- add the report-only dependabot.yml (#33)
+
+### Features
+
+- move the runtime series to CPython 3.15 (#35)
+
 ## [1.0.2] - 2026-10-21
 
 ### CI
