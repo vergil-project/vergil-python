@@ -14,10 +14,10 @@
 # packaging/build.sh fails the build if the two files disagree. See
 # docs/runtime-package-pattern.md.
 
-series = "3.14"
-cpython = "3.14.8"
-pbs_tag = "20261013"
+series = "3.15"
+cpython = "3.15.1"
+pbs_tag = "20261021"
 
 [sha256]
-x86_64 = "d8faa1b588506b9e3e5a3f57807bb056d534a1641a6b10d15b6ea3f0b413b960"
-aarch64 = "d8ae14f303d3971431184cf423ae5467202de2bc19bf6491a490250b87647d4b"
+x86_64 = "01d901e09ca673c99a6c9bd9ec2cfbd58dbe8813d07514c36cb73cfd20b18bd8"
+aarch64 = "6efe65c43ae0bdebebeab4607f91a0053dd36d5e51cfd69a791d544e9b122be7"
