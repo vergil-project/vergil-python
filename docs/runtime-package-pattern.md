@@ -38,23 +38,48 @@ libraries (OpenSSL, SQLite, zlib, ...) a rebuild of every product.
 
 Packaging the runtime once, as its own package, gives one interpreter per
 CPython series, installed by the package manager as a normal dependency.
-Products declare `Depends: vergil-python3.14 (>= <tested version>)` (deb) or
-`Requires: vergil-python3.14 >= <tested version>` (rpm).
+Products declare `Depends: vergil-python3.15 (>= <tested version>)` (deb) or
+`Requires: vergil-python3.15 >= <tested version>` (rpm).
 
 ## One package per series, side by side
 
 The CPython **series** (`X.Y`) is part of the package name; the patch is not:
-`vergil-python3.14` installs to `/opt/vergil/python/3.14/`. A different series
+`vergil-python3.15` installs to `/opt/vergil/python/3.15/`. A different series
 is a different package, installed alongside at its own path, so
-`vergil-python3.14` and `vergil-python3.15` coexist on one host. A product
-moves to a new series on its own schedule, and that never disturbs another
-product.
+`vergil-python3.14` and `vergil-python3.15` coexist on one host, and moving one
+product to a new series never disturbs another.
 
-Each package is built from `runtime.toml`'s `series`, which follows the newest
-version in the vergil-containers version window. Moving `series` to a new `X.Y`
-is one reviewed PR, made after the containers add that version. The packages
-already published for earlier series stay in the apt and dnf index, so they
-remain installable alongside the new one until their series is dropped.
+Which series a product builds against depends on whether it pins one:
+
+- **An unpinned product derives its runtime.** At each build, the vergil-tooling
+  `python` builder picks the newest version in the vergil-containers version
+  window whose `vergil-python` runtime is published (vergil-tooling#3455). So
+  an unpinned product moves to a new series at its next build after that
+  series is published, with no change of its own.
+- **Only a product pinned to an exact patch chooses its own schedule.** A
+  `[package.python].runtime` pin is an exact `x.y.z`, and the build checks that
+  the installed runtime serves exactly that patch (vergil-tooling#3455).
+  `vrg-update-deps` bumps the pin to newer patches within its series, but never
+  moves it to another series (vergil-tooling#3456). Moving a pinned product to
+  a new series is a change to its pin.
+
+This repository builds **one series at a time**: the package is built from
+`runtime.toml`'s `series`, currently `3.15`, which follows the newest version
+in the vergil-containers version window. Moving `series` to a new `X.Y` is one
+reviewed PR, made after the containers add that version. The packages already
+published for earlier series stay in the apt and dnf index, so they remain
+installable, but they are **frozen**: they get no further patch or PBS
+refreshes. `vergil-python3.14`, for example, stays at `3.14.8+20261013`.
+Building several series at once is deferred to `vergil-project/vergil-python#36`.
+
+### Publishing a series feeds the version window
+
+A product derives a series only once the window records that series' runtime
+as published. The window's `runtime_published` flag for a version is set by
+the vergil-containers lifecycle job: when a new `vergil-python<X.Y>` package
+is published, the job opens a `runtime` PR in vergil-containers that sets the
+flag (for example `vergil-project/vergil-containers#666`). Until that PR
+merges, unpinned products keep building against the previous published series.
 
 Directory ownership follows spec §6.3: the package owns every directory strictly
 below `/opt/vergil`, never `/opt/vergil` itself. dpkg and rpm reference-count
@@ -68,19 +93,19 @@ The interpreter comes from
 (PBS): relocatable CPython builds that need only glibc
 2.17 or newer, which every supported target exceeds.
 
-- **The CPython patch floats within the series.** A new patch (`3.14.8` to
-  `3.14.9`) is the same package with a higher **version**
-  (`3.14.9+<PBS tag>`), installed in place at the same path. CPython keeps the
+- **The CPython patch floats within the series.** A new patch (`3.15.1` to
+  `3.15.2`) is the same package with a higher **version**
+  (`3.15.2+<PBS tag>`), installed in place at the same path. CPython keeps the
   ABI stable within a series, so a product's venv keeps working across the
   upgrade.
 - **The PBS build floats too.** PBS republishes the same CPython patch whenever
   a bundled library (OpenSSL, SQLite, ...) gets a fix. That rebuild is again
-  the same package with a higher version (`3.14.8+<newer PBS tag>`).
+  the same package with a higher version (`3.15.1+<newer PBS tag>`).
 - Products depend on `>=` the version they were tested with, so they pick up
   patch and library security fixes without a product rebuild.
 
-dpkg and rpm compare the version's numeric parts numerically, so `3.14.10+<tag>`
-sorts after `3.14.9+<tag>`.
+dpkg and rpm compare the version's numeric parts numerically, so `3.15.10+<tag>`
+sorts after `3.15.9+<tag>`.
 
 ## Never on PATH, never pip-installable
 
@@ -97,8 +122,8 @@ sorts after `3.14.9+<tag>`.
 
 | Key | Meaning |
 |---|---|
-| `series` | The CPython series this repository builds, e.g. `3.14`. It names the package and its install root. |
-| `cpython` | The CPython patch built for the series, e.g. `3.14.8`. It must be a patch of `series`. |
+| `series` | The CPython series this repository builds, e.g. `3.15`. It names the package and its install root. |
+| `cpython` | The CPython patch built for the series, e.g. `3.15.1`. It must be a patch of `series`. |
 | `pbs_tag` | The PBS release tag (`YYYYMMDD`) the archive comes from. |
 | `sha256.x86_64` / `sha256.aarch64` | SHA-256 of each architecture's `install_only_stripped` archive, copied from that release's `SHA256SUMS` asset. |
 
@@ -189,8 +214,12 @@ change only after vergil-containers has added the version to its window:
   (`/opt/vergil/python/<series>/bin/python<series>`).
 
 The hook only reports a new minor, so a new series is always moved by hand.
-Products move to a new series on their own schedule. The previous series'
-package stays in the index while a retained product still depends on it.
+Once the new series is published and the window records it (see
+[Publishing a series feeds the version window](#publishing-a-series-feeds-the-version-window)),
+unpinned products move to it at their next build; only a product pinned to an
+exact patch stays on the previous series until its pin changes. The previous
+series' package stays in the index, frozen at its last build, with no further
+patch refreshes.
 
 ## Releasing
 
@@ -244,8 +273,6 @@ architecture but different bytes as a hard error, naming both releases (spec
 The pattern fits any language whose programs run on a **versioned interpreter or
 virtual machine** that must match what the product was tested with:
 
-- **Ruby**: a Ruby build per series, with gems installed into a per-product
-  bundle.
 - **Perl**: a Perl per version, with modules installed into a per-product
   `local::lib`.
 - **The JVM**: a JDK or JRE per major version, with the product's jars on top.
