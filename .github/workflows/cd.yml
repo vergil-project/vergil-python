@@ -19,7 +19,6 @@ jobs:
     uses: vergil-project/vergil-actions/.github/workflows/cd-release.yml@v2.1
     with:
       language: base
-      container-tag: "latest"
     # `inherit` is required: environment secrets reach a job in a cross-repo
     # reusable workflow only when the caller uses `secrets: inherit` (probe in
     # vergil-project/packages#6). With an explicit map, cd-release's
