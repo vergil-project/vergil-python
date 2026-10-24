@@ -22,5 +22,8 @@ coverage.xml
 junit.xml
 licenses.json
 docs/site/site/
+docs/site/docs/changelog.md
+docs/site/docs/releases/
+mkdocs.staged.yml
 node_modules/
 # <<< vergil-managed <<<
