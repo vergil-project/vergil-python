@@ -19,9 +19,17 @@ per series. The hook:
 4. leaves a series that release no longer ships at its pin, with a "no longer
    built upstream" note. It never searches older PBS releases (that needs the
    rate-limited GitHub API), and that is not a failure;
-5. writes one note per change, and a held-back note for a stable CPython minor
-   newer than every listed series, to ``$VRG_UPSTREAM_REPORT``. It never adds
-   or removes a series.
+5. adds a **leading-edge** series (spec §5.4 step 3, §5.8). It reads the
+   version window's ``in_policy`` python versions (``window.json`` of
+   vergil-containers at vergil.toml's ``[dependencies].vergil`` ref, or the
+   local file ``$VRG_VERSION_WINDOW`` names), and adds each window version newer
+   than the newest listed series that the same PBS release ships as
+   ``install_only_stripped`` for both architectures: a new ``[[series]]`` entry
+   and a new ``[[package]]`` entry, together. A window version that release
+   does not ship gets a held-back note and is never added half-built. It never
+   back-fills a version older than the newest listed series, and never removes
+   a series;
+6. writes one note per change or hold-back to ``$VRG_UPSTREAM_REPORT``.
 
 Stdlib only. The rewrite is all-or-nothing: every failure (network, parse, a
 missing architecture or checksum, a series/package mismatch, an unexpected file
@@ -32,17 +40,23 @@ package version (``<upstream-version>.<VERSION>``) is joined by vergil-tooling.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
 import tomllib
 import urllib.request
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, NoReturn
 
 _PBS = "astral-sh/python-build-standalone"
 LATEST_URL = f"https://github.com/{_PBS}/releases/latest"
+WINDOW_URL = "https://raw.githubusercontent.com/vergil-project/vergil-containers/{ref}/docker/versions/window.json"
+WINDOW_ENV = "VRG_VERSION_WINDOW"
+# A new [[package]] entry's wording, as every existing entry has it.
+PACKAGE_VENDOR = "vergil"
+SMOKE_CHECK = "import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)"
 _ARCHES = {"x86_64": "x86_64-unknown-linux-gnu", "aarch64": "aarch64-unknown-linux-gnu"}
 _TRIPLES = {triple: arch for arch, triple in _ARCHES.items()}
 # Stable releases only: a pre-release (3.16.0a1, 3.16.0rc1) does not match.
@@ -327,20 +341,145 @@ def refresh_series(entry: Entry, tag: str, sums: dict[str, dict[str, str]]) -> t
     return new, f"{package_name(series)}: {pin(entry)} -> {pin(new)}"
 
 
-def newer_minor(entries: Iterable[Entry], versions: Iterable[str]) -> str | None:
-    """The newest stable CPython in *versions* whose minor is newer than every listed series."""
-    newest = max((_key(e["series"]) for e in entries))
-    newer = [v for v in versions if _key(v)[:2] > newest]
-    return max(newer, key=_key) if newer else None
+def window_ref(vergil_text: str) -> str:
+    """vergil.toml's ``[dependencies].vergil``: the vergil-containers ref the window is read at."""
+    try:
+        deps = tomllib.loads(vergil_text).get("dependencies")
+    except tomllib.TOMLDecodeError as exc:
+        _die(f"vergil.toml is not valid TOML: {exc}")
+    ref = deps.get("vergil") if isinstance(deps, dict) else None
+    if not isinstance(ref, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", ref):
+        _die(f"vergil.toml [dependencies].vergil {ref!r} is not a vergil-containers ref to read the window at")
+    return ref
+
+
+def parse_window(text: str, source: str) -> list[str]:
+    """The ``in_policy`` versions of the window's ``python`` family, in file order."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        _die(f"version window {source} is not valid JSON: {exc}")
+    schema = data.get("schema") if isinstance(data, dict) else None
+    if schema != 1:
+        _die(f"version window {source} has schema {schema!r}; this hook reads schema 1")
+    try:
+        families = data["languages"]["python"]["families"]
+        family = next(f for f in families if f["key"] == "python")
+        versions = [v["version"] for v in family["versions"] if v["in_policy"] is True]
+    except (KeyError, TypeError, StopIteration) as exc:
+        _die(f"version window {source} has no languages.python.families[key == python].versions "
+             f"with version and in_policy ({type(exc).__name__}: {exc})")
+    for v in versions:
+        if not isinstance(v, str) or not _SERIES_RE.fullmatch(v):
+            _die(f"version window {source} lists python version {v!r}, not an x.y CPython series")
+    if not versions:
+        _die(f"version window {source} has no in_policy python versions")
+    return versions
+
+
+def load_window(root: Path, fetch: Fetch = fetch) -> list[str]:
+    """The version window's ``in_policy`` python versions.
+
+    Read from the local file ``$VRG_VERSION_WINDOW`` names when it is set, else
+    fetched from vergil-containers at vergil.toml's ``[dependencies].vergil`` ref.
+    """
+    override = os.environ.get(WINDOW_ENV)
+    if override:
+        try:
+            text = Path(override).read_text(encoding="utf-8")
+        except OSError as exc:
+            _die(f"reading {WINDOW_ENV}={override} failed: {exc}")
+        return parse_window(text, override)
+    url = WINDOW_URL.format(ref=window_ref((root / "vergil.toml").read_text(encoding="utf-8")))
+    return parse_window(fetch(url), url)
+
+
+def leading_edge_candidates(listed: list[str], window: list[str]) -> list[str]:
+    """The *window* versions newer than the newest *listed* series, oldest first (never a back-fill)."""
+    newest = max(_key(s) for s in listed)
+    return sorted({v for v in window if _key(v) > newest}, key=_key)
+
+
+def new_entry(series: str, cpython: str, tag: str, sums: dict[str, str]) -> tuple[Entry, str]:
+    """A new series' ``[[series]]`` dict and its ``[[package]]`` TOML block, worded as the existing ones."""
+    check_series(series, cpython)
+    if set(sums) != set(_ARCHES):
+        _die(f"new series {series} needs checksums for exactly {sorted(_ARCHES)}, got {sorted(sums)}")
+    entry: Entry = {"series": series, "cpython": cpython, "pbs_tag": tag, "sha256": dict(sums)}
+    block = (
+        "[[package]]\n"
+        'builder = "staged"\n'
+        f'vendor = "{PACKAGE_VENDOR}"\n'
+        f'name = "{package_name(series)}"\n'
+        f'upstream-version = "{pin(entry)}"\n'
+        f'summary = "Pinned {summary_pin(entry)} for vergil products"\n'
+        f"smoke = \"{smoke_interpreter(series)} -c '{SMOKE_CHECK}'\"\n"
+        "\n"
+        "[package.staged]\n"
+        'build-command = "packaging/build.sh"\n'
+    )
+    return entry, block
+
+
+def add_packages(text: str, blocks: list[str]) -> str:
+    """Insert *blocks* after the last ``[[package]]`` entry (with its sub-tables) of vergil.toml.
+
+    Blank lines and comments that lead into the next table stay with that table.
+    """
+    if not blocks:
+        return text
+    lines = text.splitlines(keepends=True)
+    headers = [i for i, line in enumerate(lines) if line.lstrip().startswith("[")]
+    starts = [i for i in headers if lines[i].strip() == "[[package]]"]
+    if not starts:
+        _die("vergil.toml has no [[package]] entries")
+    last = starts[-1]
+    end = next((i for i in headers if i > last and not lines[i].strip().startswith("[package.")), len(lines))
+    while end > last + 1 and (not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")):
+        end -= 1
+    head = "".join(lines[:end])
+    if not head.endswith("\n"):
+        head += "\n"
+    return head + "".join("\n" + block for block in blocks) + "".join(lines[end:])
+
+
+def add_leading_edge(
+    entries: list[Entry], window: list[str], tag: str, sums: dict[str, dict[str, str]]
+) -> tuple[list[tuple[Entry, str]], list[str]]:
+    """The leading-edge series to add from *window* against PBS *tag*: ``([(entry, block)], notes)``.
+
+    Candidates are taken oldest first. The first one the release does not ship
+    for both architectures is held back, and so is every newer one: adding a
+    newer series past it would make it a back-fill that is never added.
+    """
+    added: list[tuple[Entry, str]] = []
+    notes: list[str] = []
+    blocked: str | None = None
+    for series in leading_edge_candidates([e["series"] for e in entries], window):
+        if blocked is not None:
+            notes.append(f"held back: series {series} is in the window but waits for series {blocked}")
+            continue
+        in_series = [v for v in sums if _minor(v) == series]
+        shipped = [v for v in in_series if set(sums[v]) == set(_ARCHES)]
+        if not shipped:
+            gap = " for both architectures" if in_series else ""
+            notes.append(f"held back: series {series} is in the window but PBS {tag} does not ship it{gap}")
+            blocked = series
+            continue
+        cpython = max(shipped, key=_key)
+        added.append(new_entry(series, cpython, tag, sums[cpython]))
+        notes.append(f"added series {series} (CPython {cpython}, PBS {tag})")
+    return added, notes
 
 
 def refresh(root: Path, fetch: Fetch = fetch) -> list[str]:
-    """Refresh every listed series; rewrite runtime.toml and vergil.toml together; return the notes."""
+    """Refresh every listed series, add any leading-edge one, rewrite both files together; return the notes."""
     runtime_path, vergil_path = root / "runtime.toml", root / "vergil.toml"
     runtime_text = runtime_path.read_text(encoding="utf-8")
     vergil_text = vergil_path.read_text(encoding="utf-8")
     entries = load_series(runtime_text)
     check_packages(load_packages(vergil_text), entries)
+    window = load_window(root, fetch)
 
     final = fetch(LATEST_URL)
     tag = final.rstrip("/").rsplit("/", 1)[-1]
@@ -358,15 +497,14 @@ def refresh(root: Path, fetch: Fetch = fetch) -> list[str]:
         new_entries.append(new)
         if note is not None:
             notes.append(note)
-    minor = newer_minor(entries, sums)
-    if minor is not None:
-        notes.append(f"held back: PBS {tag} ships CPython {minor}, newer than every listed series; "
-                     "a new series is added to runtime.toml and vergil.toml by hand")
+    added, add_notes = add_leading_edge(new_entries, window, tag, sums)
+    notes.extend(add_notes)
+    new_entries.extend(entry for entry, _ in added)
 
     if new_entries != entries:
         # Render both files before writing either, so a failure never leaves a partial rewrite.
         new_runtime = render_runtime(new_entries)
-        new_vergil = rewrite_packages(vergil_text, new_entries)
+        new_vergil = rewrite_packages(add_packages(vergil_text, [block for _, block in added]), new_entries)
         runtime_path.write_text(new_runtime, encoding="utf-8")
         vergil_path.write_text(new_vergil, encoding="utf-8")
     return notes
