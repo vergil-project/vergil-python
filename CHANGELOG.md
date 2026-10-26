@@ -5,7 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.3] - 2026-10-23
+## [1.0.4] - 2026-10-26
+
+### CI
+
+- stop passing container-tag to cd-release (#44)
+- run the upstream refresh nightly (#58)
+
+### Chores
+
+- sync the vergil-managed .gitignore block (#49)
+
+### Documentation
+
+- update the runtime package pattern for the per-series, derived runtime (#42)
+
+### Features
+
+- build one package per listed series, refreshed by an upstream-refresh hook (#56)
+- add a new leading-edge series once the version window has it (#57)
+
+## [1.0.3] - 2026-10-22
 
 ### Chores
 

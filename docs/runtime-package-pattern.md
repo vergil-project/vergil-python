@@ -1,24 +1,28 @@
 # The runtime-package pattern
 
-This repository packages a CPython runtime as an OS package, **one package per
-CPython series** (`vergil-python<X.Y>`, `.deb` and `.rpm`), that vergil products
-depend on. This document explains why the runtime is packaged this way, how to
-change the pin, and when the same pattern applies to other languages.
+This repository packages CPython runtimes as OS packages, **one package per
+listed CPython series** (`vergil-python<X.Y>`, `.deb` and `.rpm`), that vergil
+products depend on. This document explains why the runtime is packaged this
+way, how the pins change, and when the same pattern applies to other languages.
 
 Background: epic `vergil-project/.github#356`, spec §4.1, §6.2 and decision D7.
 The per-series model comes from epic `vergil-project/.github#407` (the language
-version lifecycle), spec §7.
+version lifecycle), spec §7. Building several series at once, the upstream
+refresh and the release-suffixed version come from epic
+`vergil-project/.github#472` (multi-series runtime), spec §5.3 to §5.5.
 
 ## Table of Contents
 
 - [Why the runtime is its own package](#why-the-runtime-is-its-own-package)
 - [One package per series, side by side](#one-package-per-series-side-by-side)
-- [The patch and the PBS build float within the series](#the-patch-and-the-pbs-build-float-within-the-series)
+- [The patch and the PBS build float within each series](#the-patch-and-the-pbs-build-float-within-each-series)
+- [The package version](#the-package-version)
 - [Never on PATH, never pip-installable](#never-on-path-never-pip-installable)
 - [Provenance and the build](#provenance-and-the-build)
-- [Changing the pin](#changing-the-pin)
+- [Changing the pins](#changing-the-pins)
+- [Adding and removing a series](#adding-and-removing-a-series)
 - [Releasing](#releasing)
-- [Never re-release an unchanged name and version](#never-re-release-an-unchanged-name-and-version)
+- [Every release publishes every series](#every-release-publishes-every-series)
 - [Which languages the pattern applies to](#which-languages-the-pattern-applies-to)
 
 ## Why the runtime is its own package
@@ -38,49 +42,94 @@ libraries (OpenSSL, SQLite, zlib, ...) a rebuild of every product.
 
 Packaging the runtime once, as its own package, gives one interpreter per
 CPython series, installed by the package manager as a normal dependency.
-Products declare `Depends: vergil-python3.14 (>= <tested version>)` (deb) or
-`Requires: vergil-python3.14 >= <tested version>` (rpm).
+Products declare `Depends: vergil-python3.15 (>= <tested version>)` (deb) or
+`Requires: vergil-python3.15 >= <tested version>` (rpm).
 
 ## One package per series, side by side
 
 The CPython **series** (`X.Y`) is part of the package name; the patch is not:
-`vergil-python3.14` installs to `/opt/vergil/python/3.14/`. A different series
+`vergil-python3.15` installs to `/opt/vergil/python/3.15/`. A different series
 is a different package, installed alongside at its own path, so
-`vergil-python3.14` and `vergil-python3.15` coexist on one host. A product
-moves to a new series on its own schedule, and that never disturbs another
-product.
+`vergil-python3.14` and `vergil-python3.15` coexist on one host, and moving one
+product to a new series never disturbs another.
 
-Each package is built from `runtime.toml`'s `series`, which follows the newest
-version in the vergil-containers version window. Moving `series` to a new `X.Y`
-is one reviewed PR, made after the containers add that version. The packages
-already published for earlier series stay in the apt and dnf index, so they
-remain installable alongside the new one until their series is dropped.
+This repository builds **every listed series**. The list is `runtime.toml`'s
+`[[series]]` entries, currently 3.14 and 3.15, each with exactly one matching
+`[[package]]` entry in `vergil.toml`. Every series is refreshed within itself
+(see [Changing the pins](#changing-the-pins)), and every release publishes
+every series (see
+[Every release publishes every series](#every-release-publishes-every-series)).
 
-Directory ownership follows spec §6.3: the package owns every directory strictly
-below `/opt/vergil`, never `/opt/vergil` itself. dpkg and rpm reference-count
-shared directories such as `/opt/vergil/python`, so removing the last runtime
-leaves nothing behind.
+Which series a product builds against depends on whether it pins one:
 
-## The patch and the PBS build float within the series
+- **An unpinned product derives its runtime.** At each build, the vergil-tooling
+  `python` builder picks the newest version in the vergil-containers version
+  window whose `vergil-python` runtime is published (vergil-tooling#3455). So
+  an unpinned product moves to a new series at its next build after that
+  series is published, with no change of its own.
+- **Only a product pinned to an exact patch chooses its own schedule.** A
+  `[package.python].runtime` pin is an exact `x.y.z`, and the build checks that
+  the installed runtime serves exactly that patch (vergil-tooling#3455).
+  `vrg-update-deps` bumps the pin to newer patches within its series, but never
+  moves it to another series (vergil-tooling#3456). Moving a pinned product to
+  a new series is a change to its pin.
+
+### Publishing a series feeds the version window
+
+A product derives a series only once the window records that series' runtime
+as published. The window's `runtime_published` flag for a version is set by
+the vergil-containers lifecycle job: when a new `vergil-python<X.Y>` package
+is published, the job opens a `runtime` PR in vergil-containers that sets the
+flag (for example `vergil-project/vergil-containers#666`). Until that PR
+merges, unpinned products keep building against the previous published series.
+
+Directory ownership follows spec §6.3: each package owns every directory
+strictly below `/opt/vergil`, never `/opt/vergil` itself. dpkg and rpm
+reference-count shared directories such as `/opt/vergil/python`, so removing the
+last runtime leaves nothing behind.
+
+## The patch and the PBS build float within each series
 
 The interpreter comes from
 [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
 (PBS): relocatable CPython builds that need only glibc
 2.17 or newer, which every supported target exceeds.
 
-- **The CPython patch floats within the series.** A new patch (`3.14.8` to
-  `3.14.9`) is the same package with a higher **version**
-  (`3.14.9+<PBS tag>`), installed in place at the same path. CPython keeps the
-  ABI stable within a series, so a product's venv keeps working across the
-  upgrade.
+- **The CPython patch floats within its series.** A new patch (`3.15.1` to
+  `3.15.2`) is the same package with a higher **version**, installed in place
+  at the same path. CPython keeps the ABI stable within a series, so a
+  product's venv keeps working across the upgrade.
 - **The PBS build floats too.** PBS republishes the same CPython patch whenever
   a bundled library (OpenSSL, SQLite, ...) gets a fix. That rebuild is again
-  the same package with a higher version (`3.14.8+<newer PBS tag>`).
+  the same package with a higher version.
+- Each series floats on its own: different series may sit on different PBS
+  builds.
 - Products depend on `>=` the version they were tested with, so they pick up
   patch and library security fixes without a product rebuild.
 
-dpkg and rpm compare the version's numeric parts numerically, so `3.14.10+<tag>`
-sorts after `3.14.9+<tag>`.
+## The package version
+
+A runtime package's version carries its **inputs** (the CPython patch and the
+PBS build) first, then the vergil-python **release** that built it:
+
+```text
+<cpython>+<pbs_tag>.<X.Y.Z>        for example  3.15.1+20261021.1.0.5
+```
+
+`vergil.toml` holds only the inputs, in each `[[package]]` entry's
+`upstream-version` (`"3.15.1+20261021"`), which is all the upstream-refresh hook
+ever writes. vergil-tooling joins it with the repository `VERSION` to form the
+full version, in one place (`naming.package_version`), for the build, the
+`check-unpublished` identities and the release's index wait. The hook never
+touches `VERSION`.
+
+The order is chosen so that dpkg and rpm both sort it correctly: a newer CPython
+patch sorts higher, a newer PBS build of the same patch sorts higher, and at the
+same inputs a newer vergil-python release sorts higher. A release-suffixed
+version also sorts above the older `<cpython>+<pbs_tag>` versions already in
+the index, so hosts upgrade. `apt policy` and `dnf info` show the installed
+CPython and PBS build directly. dpkg and rpm compare the numeric parts
+numerically, so `3.15.10+<tag>` sorts after `3.15.9+<tag>`.
 
 ## Never on PATH, never pip-installable
 
@@ -93,104 +142,150 @@ sorts after `3.14.9+<tag>`.
 
 ## Provenance and the build
 
-`runtime.toml` is the pin:
+`runtime.toml` holds the pins, one `[[series]]` entry per listed series:
 
 | Key | Meaning |
 |---|---|
-| `series` | The CPython series this repository builds, e.g. `3.14`. It names the package and its install root. |
-| `cpython` | The CPython patch built for the series, e.g. `3.14.8`. It must be a patch of `series`. |
+| `series` | The CPython series, e.g. `3.15`. It names the package and its install root. |
+| `cpython` | The CPython patch built for the series, e.g. `3.15.1`. It must be a patch of `series`. |
 | `pbs_tag` | The PBS release tag (`YYYYMMDD`) the archive comes from. |
 | `sha256.x86_64` / `sha256.aarch64` | SHA-256 of each architecture's `install_only_stripped` archive, copied from that release's `SHA256SUMS` asset. |
 
-The package is built by the vergil-tooling `staged` builder (spec §6.6), which
-runs `packaging/build.sh` in each build cell with `VRG_STAGING_ROOT` and
-`VRG_TARGET_ARCH` set. The script:
+Each series has exactly one `[[package]]` entry in `vergil.toml`, with `name`
+`vergil-python<series>`, `upstream-version` `<cpython>+<pbs_tag>`, a `summary`
+naming the pin, and a `smoke` command running
+`/opt/vergil/python/<series>/bin/python<series>`.
 
-1. checks that `series` is an `X.Y` and that `cpython` is an `X.Y.Z` patch of
-   it;
-2. checks that `vergil.toml` `[package].name` is `vergil-python<series>`,
-   `[package].version` is `<cpython>+<pbs_tag>`, and `[package].smoke` runs
-   `/opt/vergil/python/<series>/bin/python<series>`, so the two files cannot
-   drift;
-3. maps `VRG_TARGET_ARCH` (`amd64` or `arm64`) to the PBS triple
+Each package is built by the vergil-tooling `staged` builder (spec §6.6), which
+runs `packaging/build.sh` in each of that package's build cells with
+`VRG_STAGING_ROOT`, `VRG_TARGET_ARCH`, `VRG_PACKAGE_NAME` and
+`VRG_PACKAGE_VERSION` set. The script:
+
+1. checks that the two files agree one-to-one: every series is an `X.Y` with
+   `cpython` an `X.Y.Z` patch of it, and every series has exactly one package
+   named `vergil-python<series>`, and every package exactly one series. A
+   series in one file but not the other fails every build;
+2. selects the series named by `VRG_PACKAGE_NAME`, and fails if no listed
+   series has that name;
+3. checks that the selected package's `upstream-version` is
+   `<cpython>+<pbs_tag>`, that `VRG_PACKAGE_VERSION` is
+   `<cpython>+<pbs_tag>.<X.Y.Z>`, and that its `smoke` runs the series
+   interpreter, so the two files and the computed version cannot drift;
+4. maps `VRG_TARGET_ARCH` (`amd64` or `arm64`) to the PBS triple
    (`x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu`);
-4. downloads
+5. downloads
    `cpython-<cpython>+<pbs_tag>-<triple>-install_only_stripped.tar.gz` from the
    PBS release and fails unless its SHA-256 matches `runtime.toml`;
-5. unpacks the archive's `python/` root into
+6. unpacks the archive's `python/` root into
    `$VRG_STAGING_ROOT/opt/vergil/python/<series>/`;
-6. writes the `EXTERNALLY-MANAGED` marker.
+7. writes the `EXTERNALLY-MANAGED` marker.
 
 The builder then applies the glibc floor guard to every ELF file in the tree and
-hands it to nFPM. In PR CI, `package / evidence` installs each package on all
-eight targets and runs the `smoke` command from `vergil.toml`, which imports
-`ssl`, `sqlite3`, `ctypes` and `zlib` with the packaged interpreter.
+hands it to nFPM. In PR CI, `package / evidence` builds every listed series and
+installs each package on all eight targets, running its `smoke` command, which
+imports `ssl`, `sqlite3`, `ctypes` and `zlib` with the packaged interpreter.
 
-The offline tests for these checks and for the install root are
+The offline tests for these checks, the install root and the build matrix are
 `tests/test_build.py`, run by `tests/check-build.sh`. They serve a small fake
 archive through a stand-in `curl`, so they never touch the network.
 
-## Changing the pin
+## Changing the pins
 
 Every pin change is one reviewed PR. Normally the PR is opened for you.
 
-### The dependency-update hook
+### The upstream-refresh hook
 
-`vergil.toml` names `scripts/dev/update-deps.sh` as this repository's
-`[dependency-update].hook`. Every `vrg-release` runs it in its dependency-update
-stage, after the release is published, and the change it makes lands on
-`develop` as a dependency-update PR for review. The hook runs
-`scripts/dev/update_deps.py`, which:
+`vergil.toml` names `scripts/dev/upstream-refresh.sh` as this repository's
+`[upstream-refresh].hook`. `vrg-upstream-refresh` runs it on a clean checkout of
+`develop` and keeps exactly one `upstream-refresh` PR in step with what it
+changed; a human reviews and merges it. It is separate from the dependency
+update: `vrg-release`'s `update-deps` stage never touches the series, and this
+repository has no `[dependency-update].hook`. The hook runs
+`scripts/dev/upstream_refresh.py`, which:
 
-1. takes the newest python-build-standalone release (the target of
-   `releases/latest`);
-2. reads that release's `SHA256SUMS` and takes the newest CPython patch
-   **within `series`** that it ships as `install_only_stripped` for both
-   `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`;
-3. rewrites `runtime.toml` (`cpython`, `pbs_tag` and both `sha256` values) and
-   `vergil.toml` `[package]` (`version` and `summary`) together, so
-   `packaging/build.sh`'s consistency check holds. It never changes `series`,
-   the package `name` or the `smoke` path, which all name the series; it only
-   checks that they agree with it. When the pin is already current it changes
-   nothing;
-4. reports a newer stable CPython minor, if the release ships one, in the
-   release's dependency report as held back. It never moves the series.
+1. checks that `runtime.toml` and `vergil.toml` agree, as `packaging/build.sh`
+   does, before any network access;
+2. takes the newest python-build-standalone release (the target of
+   `releases/latest`) and reads its `SHA256SUMS`;
+3. for **each listed series**, takes the newest CPython patch **within that
+   series** that the release ships as `install_only_stripped` for both
+   `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, and rewrites
+   that series' `cpython`, `pbs_tag` and both `sha256` values in
+   `runtime.toml`, and its package's `upstream-version` and `summary` in
+   `vergil.toml`. It never changes `series`, a package `name` or a `smoke`
+   path, which all name the series. A series already current changes nothing;
+4. leaves a series the release no longer ships at its pin, with the note
+   `vergil-python<X.Y>: no longer built upstream (latest PBS <tag> ships no
+   <X.Y> patch); kept at <cpython>+<pbs_tag>`. It never searches older PBS
+   releases (that needs the rate-limited GitHub API). This usually means the
+   series is past end of life; it is not a failure and does not hold back the
+   other series;
+5. adds a **leading-edge** series from the version window (see
+   [Adding and removing a series](#adding-and-removing-a-series)). It never
+   back-fills an older series and never removes one;
+6. writes a note for each series it moved or added, and for each window
+   version it held back. Those notes become the refresh PR's `## Notes`.
 
-It fails, before writing either file, if `series` is missing or `cpython` is
-not a patch of it, if the package `name` or `smoke` path does not name the
-series, if the newest PBS release is older than the pinned tag or ships only an
-older patch than the pinned one (a downgrade), if `SHA256SUMS` lists two
-different checksums for the same archive, if the chosen patch is missing an
-archive for either architecture, or if either file does not have the layout it
-expects. Its offline unit tests are `tests/test_update_deps.py`, run by
-`tests/check-update-deps.sh`.
+The rewrite is all-or-nothing. The hook fails, before writing either file, if
+the two files disagree, if the version window cannot be read or is not schema
+1, if the newest PBS release is older than a series'
+pinned tag, if it ships only an older patch of a series than the pinned one (a
+downgrade), if `SHA256SUMS` lists two different checksums for one archive or a
+different checksum for an unchanged pin, if a series' chosen patch is missing an
+archive (or a readable checksum) for either architecture, or if either file
+does not have the layout it expects. One series' failure stops the whole run, so
+there is never a partial rewrite across series. The hook rewrites
+`runtime.toml` whole, so comments belong in its header. Its offline unit tests
+are `tests/test_upstream_refresh.py`, run by `tests/check-upstream-refresh.sh`.
 
 ### By hand
 
-Change the pin by hand when the hook cannot, and always for a new series. Pick
-the newest PBS release that ships the wanted patch as `install_only_stripped`
-for both `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, and take
-both checksums from its `SHA256SUMS`. Never type a checksum by hand from
-anywhere else.
+Change a pin by hand when the hook cannot. Pick the newest PBS release that
+ships the wanted patch as `install_only_stripped` for both
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, and take both
+checksums from its `SHA256SUMS`. Never type a checksum by hand from anywhere
+else. For a new patch or PBS rebuild of a series (an in-place upgrade of the
+same package), change:
 
-**A new patch or PBS rebuild within the series** (an in-place upgrade of the
-same package):
+- that series' `runtime.toml` entry: `cpython` (for a new patch), `pbs_tag` and
+  both `sha256` values;
+- its `vergil.toml` `[[package]]`: `upstream-version` (`<cpython>+<pbs_tag>`)
+  and `summary`.
 
-- `runtime.toml`: `cpython` (for a new patch), `pbs_tag` and both `sha256`
-  values.
-- `vergil.toml` `[package]`: `version` (`<cpython>+<pbs_tag>`) and `summary`.
+## Adding and removing a series
 
-**A new series** (a new package, installed alongside the old one). Make this
-change only after vergil-containers has added the version to its window:
-
-- `runtime.toml`: `series`, `cpython`, `pbs_tag` and both `sha256` values.
-- `vergil.toml` `[package]`: `name` (`vergil-python<series>`), `version`,
-  `summary`, and the interpreter path in `smoke`
-  (`/opt/vergil/python/<series>/bin/python<series>`).
-
-The hook only reports a new minor, so a new series is always moved by hand.
-Products move to a new series on their own schedule. The previous series'
-package stays in the index while a retained product still depends on it.
+- **Add (automatic).** A series is added by the upstream-refresh PR. The hook
+  reads the version window: the `in_policy` versions of the `python` family in
+  vergil-containers' `docker/versions/window.json`, at the ref in this
+  repository's `vergil.toml` `[dependencies].vergil`. The `VRG_VERSION_WINDOW`
+  environment variable, when set, names a local `window.json` to read instead.
+  A window version is added only when it is **newer than the newest listed
+  series** and the same PBS release the refresh uses ships it as
+  `install_only_stripped` for both architectures. It is added at its newest
+  patch, to both files together: a `[[series]]` entry in `runtime.toml`, and a
+  `[[package]]` entry after the last one in `vergil.toml`, worded like the
+  others. The note is `added series <X.Y> (CPython <cpython>, PBS <tag>)`.
+  A window version that the release does not ship (or ships for only one
+  architecture) is never added half-built. It gets the note
+  `held back: series <X.Y> is in the window but PBS <tag> does not ship it`,
+  and any newer window version waits for it, so it never becomes a back-fill.
+  Window versions older than the newest listed series are never added, and a
+  stable CPython minor that PBS ships but the window lacks is not added either.
+  What puts a version in the window is vergil-containers adding it and
+  releasing. Once the new package is published and the window records it (see
+  [Publishing a series feeds the version window](#publishing-a-series-feeds-the-version-window)),
+  unpinned products move to it at their next build.
+- **Add (by hand).** Still possible: add the series to both files in one
+  reviewed PR, a `[[series]]` entry in `runtime.toml` and a `[[package]]` entry
+  in `vergil.toml` with `name` `vergil-python<series>`, `upstream-version`,
+  `summary`, the series' interpreter path in `smoke`, and `[package.staged]
+  build-command = "packaging/build.sh"`. Add a series only once
+  vergil-containers has the version in its window. `packaging/build.sh` refuses
+  an entry in one file without the other.
+- **Remove.** Delete the series' `[[series]]` entry and its `[[package]]` entry
+  in one reviewed PR. The series is then no longer built. Its packages already
+  published stay in the index until retention ages them out, or for as long as
+  a retained consumer depends on them.
 
 ## Releasing
 
@@ -213,39 +308,25 @@ vergil-actions `cd-release.yml` reusable workflow:
   `publish-index` workflow rebuilds, re-signs and deploys the apt/dnf index.
   A missed dispatch is picked up by that workflow's weekly reconcile.
 
-## Never re-release an unchanged name and version
+## Every release publishes every series
 
-Every release of this repository builds and publishes the package named by
-`vergil.toml`. The package version is the explicit `[package].version`, not the
-repository `VERSION`, so **a release that does not change the pin re-publishes
-the same `name`/`version` with different bytes** (the packages are rebuilt,
-and nothing guarantees the rebuilt bytes are identical).
+Every release of this repository builds and publishes **every listed series**;
+there is no "unchanged series" to skip. Because each package version ends in the
+repository release (see [The package version](#the-package-version)), a release
+always publishes new identities, even for a series whose inputs did not move.
+So a release that changes only this repository's own code (for example a
+`packaging/build.sh` fix) is safe: it never re-publishes an existing
+`name`/`version` with different bytes, which the index treats as a hard error
+(spec §7.2).
 
-The index treats two artifacts with the same format, name, version-release and
-architecture but different bytes as a hard error, naming both releases (spec
-§7.2). It never picks one. So:
-
-- **Only release this repository when the pin changes.** Documentation or
-  workflow changes merge to `develop` and ship with the next pin change.
-- **The next pin usually arrives right after a release.** The release's
-  dependency-update stage opens a PR that moves the pin, so the next pin
-  normally lands on `develop` as that PR, and `vrg-release` refuses to start
-  while a dependency-update PR is still open (unless given
-  `--allow-pending-deps`). Merge it before the next release.
-  If the hook found the pin already current, there is no new pin, and the
-  next release has to wait for one.
-- If a packaging change other than the pin must ship (for example a fix to
-  `packaging/build.sh` that changes the installed tree), it still needs a new
-  package version. Take the next PBS rebuild or CPython patch of the series in
-  the same release.
+A merged refresh PR is published by the next normal `vrg-release`, which is
+always a human action.
 
 ## Which languages the pattern applies to
 
 The pattern fits any language whose programs run on a **versioned interpreter or
 virtual machine** that must match what the product was tested with:
 
-- **Ruby**: a Ruby build per series, with gems installed into a per-product
-  bundle.
 - **Perl**: a Perl per version, with modules installed into a per-product
   `local::lib`.
 - **The JVM**: a JDK or JRE per major version, with the product's jars on top.

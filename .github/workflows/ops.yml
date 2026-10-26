@@ -18,3 +18,18 @@ jobs:
     secrets:
       APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+
+  # Runs vrg-upstream-refresh (epic vergil-project/.github#472). The
+  # [upstream-refresh].hook in vergil.toml refreshes each listed series in
+  # runtime.toml to its newest patch, and the reusable workflow keeps exactly
+  # one PR on the fixed `upstream-refresh` branch in step with the result
+  # (opened on drift, refreshed in place, closed when nothing drifts). The push
+  # and PR use the App token minted inside the reusable workflow, so this job's
+  # GITHUB_TOKEN needs only contents: read. Nothing is auto-merged.
+  upstream-refresh:
+    uses: vergil-project/vergil-actions/.github/workflows/ops-upstream-refresh.yml@v2.1
+    permissions:
+      contents: read
+    secrets:
+      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}

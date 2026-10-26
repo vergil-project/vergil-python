@@ -5,7 +5,6 @@ branching-model = "library-release"
 release-model = "tagged-release"
 
 [ci]
-versions = ["latest"]
 integration-tests = false
 
 [publish]
@@ -15,16 +14,34 @@ docs = false
 [dependencies]
 vergil = "v2.1"
 
-[package]
+# One package per listed series in runtime.toml (epic vergil-project/.github#472,
+# spec §5.3). upstream-version holds only the upstream inputs
+# (<cpython>+<pbs_tag>); vergil-tooling appends the repo VERSION to form the
+# full package version. The upstream-refresh hook rewrites upstream-version and
+# summary; packaging/build.sh fails the build if this file and runtime.toml
+# disagree.
+
+[[package]]
+builder = "staged"
+vendor = "vergil"
+name = "vergil-python3.14"
+upstream-version = "3.14.9+20261021"
+summary = "Pinned CPython 3.14.9 (python-build-standalone 20261021) for vergil products"
+smoke = "/opt/vergil/python/3.14/bin/python3.14 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
+
+[package.staged]
+build-command = "packaging/build.sh"
+
+[[package]]
 builder = "staged"
 vendor = "vergil"
 name = "vergil-python3.15"
-version = "3.15.1+20261021"
+upstream-version = "3.15.1+20261021"
 summary = "Pinned CPython 3.15.1 (python-build-standalone 20261021) for vergil products"
 smoke = "/opt/vergil/python/3.15/bin/python3.15 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
 
 [package.staged]
 build-command = "packaging/build.sh"
 
-[dependency-update]
-hook = "scripts/dev/update-deps.sh"
+[upstream-refresh]
+hook = "scripts/dev/upstream-refresh.sh"
