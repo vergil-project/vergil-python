@@ -4,9 +4,10 @@ This file provides guidance to Claude Code when working in this repository.
 
 **Project name**: vergil-python
 
-The runtime pin (`runtime.toml` and `vergil.toml` `[package]`) is moved by the
-dependency-update hook `scripts/dev/update-deps.sh` on every `vrg-release`; see
-`docs/runtime-package-pattern.md`.
+The repo builds one runtime package per listed series. The pins
+(`runtime.toml` `[[series]]` and `vergil.toml` `[[package]]`) are moved by the
+upstream-refresh hook `scripts/dev/upstream-refresh.sh`, which
+`vrg-upstream-refresh` runs; see `docs/runtime-package-pattern.md`.
 
 ## Validation
 
