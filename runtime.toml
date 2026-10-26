@@ -1,23 +1,36 @@
-# The python-build-standalone (PBS) runtime packaged by this repo: one package
-# per CPython series, vergil-python<series> at /opt/vergil/python/<series>/
-# (epic vergil-project/.github#407, spec §7). `series` is the x.y; `cpython` is
-# the patch currently built for it and floats within the series, as does the
-# PBS build. Moving `series` to a new x.y is a reviewed PR of its own.
+# The python-build-standalone (PBS) runtimes packaged by this repo: one package
+# per listed CPython series, vergil-python<series> at /opt/vergil/python/<series>/
+# (epic vergil-project/.github#472, spec §5.3). Each [[series]] entry pins one
+# series: `series` is the x.y; `cpython` is the patch built for it and
+# `pbs_tag` the PBS build, and both float within the series. Different series
+# may sit on different PBS builds.
 #
 # Source of every value but `series`: the PBS release's SHA256SUMS asset,
 #   https://github.com/astral-sh/python-build-standalone/releases/download/<pbs_tag>/SHA256SUMS
 # for the asset
 #   cpython-<cpython>+<pbs_tag>-<triple>-install_only_stripped.tar.gz
 #
-# A new cpython or pbs_tag also changes [package].version/summary in
-# vergil.toml; a new series also changes [package].name/smoke.
-# packaging/build.sh fails the build if the two files disagree. See
+# Every series has exactly one [[package]] entry in vergil.toml, named
+# vergil-python<series>, with upstream-version = "<cpython>+<pbs_tag>".
+# packaging/build.sh fails the build if the two files disagree. The
+# upstream-refresh hook (scripts/dev/upstream-refresh.sh) rewrites this file
+# whole, so comments go here, never between entries. See
 # docs/runtime-package-pattern.md.
 
+[[series]]
+series = "3.14"
+cpython = "3.14.9"
+pbs_tag = "20261021"
+
+[series.sha256]
+x86_64 = "561e91c1cadf30e84aec94d1917384ae3267e5f3e6e135e51fd1578bb19f4064"
+aarch64 = "6f77731d85a14ed848dd4041478cd3ed511523caa3d896b84b436a7edf13cf62"
+
+[[series]]
 series = "3.15"
 cpython = "3.15.1"
 pbs_tag = "20261021"
 
-[sha256]
+[series.sha256]
 x86_64 = "01d901e09ca673c99a6c9bd9ec2cfbd58dbe8813d07514c36cb73cfd20b18bd8"
 aarch64 = "6efe65c43ae0bdebebeab4607f91a0053dd36d5e51cfd69a791d544e9b122be7"
