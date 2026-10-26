@@ -4,8 +4,10 @@
 #
 # vrg-upstream-refresh runs it from the repo root with VRG_UPSTREAM_REPORT set.
 # It refreshes every listed series in runtime.toml within itself, rewriting
-# runtime.toml and the matching vergil.toml [[package]] entries together, and
-# writes notes for the refresh PR body. It edits files only; the driver commits.
+# runtime.toml and the matching vergil.toml [[package]] entries together, adds
+# a leading-edge series once the version window has it and PBS ships it
+# (VRG_VERSION_WINDOW, when set, names a local window.json), and writes notes
+# for the refresh PR body. It edits files only; the driver commits.
 # Any failure exits non-zero before either file is written.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

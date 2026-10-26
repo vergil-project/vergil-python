@@ -5,6 +5,7 @@ Every network lookup is injected through ``main(fetch=...)`` or a patched
 """
 
 import io
+import json
 import os
 import sys
 import tempfile
@@ -79,7 +80,25 @@ _TAIL = '\n[upstream-refresh]\nhook = "scripts/dev/upstream-refresh.sh"\n'
 _VERGIL = _HEAD + _package("3.14", "3.14.8", _OLD14) + "\n" + _package("3.15", "3.15.1", _OLD15) + _TAIL
 
 
-def _fetcher(tag: str = _TAG, sums: str = _SUMS):
+def _window(*versions: str, schema: int = 1, out_of_policy: tuple[str, ...] = ()) -> str:
+    """A window.json with *versions* in policy (and *out_of_policy* not), newest first like the real one."""
+    rows = [{"version": v, "eol": "2030-10-31", "in_policy": True, "runtime_published": False} for v in versions]
+    rows += [{"version": v, "eol": "2020-10-31", "in_policy": False, "runtime_published": False}
+             for v in out_of_policy]
+    rows.sort(key=lambda r: ur._key(r["version"]), reverse=True)
+    return json.dumps({"schema": schema, "languages": {
+        "go": {"families": [{"key": "go", "token_prefix": "", "versions": [
+            {"version": "9.9", "in_policy": True}]}]},
+        "python": {"families": [{"key": "python", "token_prefix": "", "versions": rows}]},
+    }})
+
+
+# The window as it stands: the listed series and two older ones, nothing newer.
+_WINDOW = _window("3.12", "3.13", "3.14", "3.15")
+_WINDOW_URL = ur.WINDOW_URL.format(ref="v2.1")
+
+
+def _fetcher(tag: str = _TAG, sums: str = _SUMS, window: str | None = None):
     calls: list[str] = []
 
     def fetch(url: str) -> str:
@@ -88,6 +107,8 @@ def _fetcher(tag: str = _TAG, sums: str = _SUMS):
             return f"https://github.com/astral-sh/python-build-standalone/releases/tag/{tag}"
         if url == ur.sums_url(tag):
             return sums
+        if window is not None and url == _WINDOW_URL:
+            return window
         raise AssertionError(f"unexpected URL {url}")
 
     fetch.calls = calls  # type: ignore[attr-defined]
@@ -243,11 +264,77 @@ class RefreshSeriesTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ur.refresh_series(_ENTRIES[0], _OLD14, sums)
 
-    def test_newer_minor(self):
-        self.assertEqual(ur.newer_minor(_ENTRIES, ["3.14.9", "3.15.2", "3.16.1", "3.16.0"]), "3.16.1")
-        self.assertIsNone(ur.newer_minor(_ENTRIES, ["3.14.9", "3.15.2"]))
-        self.assertIsNone(ur.newer_minor(_ENTRIES[:1] + [dict(_ENTRIES[1], series="3.10", cpython="3.10.1")],
-                                         ["3.9.9"]))
+
+class WindowTest(unittest.TestCase):
+    def test_reads_in_policy_python_family_versions(self):
+        text = _window("3.13", "3.14", out_of_policy=("3.9",))
+        self.assertEqual(ur.parse_window(text, "fixture"), ["3.14", "3.13"])
+
+    def test_committed_window_ref(self):
+        self.assertEqual(ur.window_ref((_REPO / "vergil.toml").read_text()), "v2.1")
+
+    def test_bad_ref_fails(self):
+        for text in ["[project]\n", '[dependencies]\nvergil = ""\n', '[dependencies]\nvergil = "../x"\n',
+                     "[dependencies]\nvergil = 2\n", "[dependencies\n"]:
+            with self.subTest(text=text), self.assertRaises(SystemExit):
+                ur.window_ref(text)
+
+    def test_bad_windows_fail(self):
+        good = json.loads(_WINDOW)
+        family = good["languages"]["python"]["families"][0]
+        cases = {
+            "not json": "{",
+            "not an object": "[]",
+            "schema 2": _window("3.14", schema=2),
+            "no schema": json.dumps({"languages": good["languages"]}),
+            "no python": json.dumps({"schema": 1, "languages": {}}),
+            "no python family": json.dumps({"schema": 1, "languages": {"python": {"families": [
+                dict(family, key="pypy")]}}}),
+            "row without in_policy": json.dumps({"schema": 1, "languages": {"python": {"families": [
+                dict(family, versions=[{"version": "3.14"}])]}}}),
+            "bad version": _window("3.14", "3.15.0"),
+            "nothing in policy": _window(out_of_policy=("3.14",)),
+        }
+        for label, text in cases.items():
+            with self.subTest(label), self.assertRaises(SystemExit):
+                ur.parse_window(text, "fixture")
+
+
+class LeadingEdgeTest(unittest.TestCase):
+    def test_candidates_are_newer_than_the_newest_listed_oldest_first(self):
+        self.assertEqual(ur.leading_edge_candidates(["3.14", "3.15"], ["3.17", "3.12", "3.16", "3.15"]),
+                         ["3.16", "3.17"])
+        self.assertEqual(ur.leading_edge_candidates(["3.14", "3.15"], ["3.12", "3.13", "3.14", "3.15"]), [])
+        # Numeric, not lexical: 3.10 is newer than 3.9.
+        self.assertEqual(ur.leading_edge_candidates(["3.9"], ["3.10", "3.8"]), ["3.10"])
+
+    def test_new_entry_matches_the_committed_wording(self):
+        # Every committed [[package]] block is exactly what new_entry renders for its pin.
+        vergil = (_REPO / "vergil.toml").read_text()
+        for e in ur.load_series((_REPO / "runtime.toml").read_text()):
+            entry, block = ur.new_entry(e["series"], e["cpython"], e["pbs_tag"], e["sha256"])
+            self.assertEqual(entry, e)
+            self.assertIn(block, vergil)
+
+    def test_new_entry_needs_both_arches(self):
+        with self.assertRaises(SystemExit):
+            ur.new_entry("3.16", "3.16.0", _TAG, {"x86_64": _H["e"]})
+
+    def test_add_packages_after_the_last_package(self):
+        _, block = ur.new_entry("3.16", "3.16.0", _TAG, {"x86_64": _H["e"], "aarch64": _H["f"]})
+        text = _VERGIL.replace("\n[upstream-refresh]", "\n# the hook\n[upstream-refresh]")
+        out = ur.add_packages(text, [block])
+        self.assertEqual(out, text.replace("\n\n# the hook\n", "\n\n" + block + "\n# the hook\n"))
+        self.assertEqual(ur.add_packages(text, []), text)
+
+    def test_add_packages_at_end_of_file(self):
+        _, block = ur.new_entry("3.16", "3.16.0", _TAG, {"x86_64": _H["e"], "aarch64": _H["f"]})
+        text = (_HEAD + _package("3.14", "3.14.8", _OLD14)).rstrip("\n")
+        self.assertEqual(ur.add_packages(text, [block]), text + "\n\n" + block)
+
+    def test_add_packages_without_packages_fails(self):
+        with self.assertRaises(SystemExit):
+            ur.add_packages(_HEAD, ["[[package]]\n"])
 
 
 class MainTest(unittest.TestCase):
@@ -260,7 +347,9 @@ class MainTest(unittest.TestCase):
         (self.root / "vergil.toml").write_text(_VERGIL)
         (self.root / "VERSION").write_text("1.0.5\n")
         self.report = self.root / "report.txt"
-        env = mock.patch.dict(os.environ, {"VRG_UPSTREAM_REPORT": str(self.report)})
+        self.window = self.root / "window.json"
+        self.window.write_text(_WINDOW)
+        env = mock.patch.dict(os.environ, {"VRG_UPSTREAM_REPORT": str(self.report), ur.WINDOW_ENV: str(self.window)})
         env.start()
         self.addCleanup(env.stop)
 
@@ -371,16 +460,135 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self._files(), before)
         self.assertEqual(self._notes(), [])
 
-    def test_newer_minor_is_noted_never_added(self):
+    def test_adds_leading_edge_series(self):
+        self.window.write_text(_window("3.12", "3.13", "3.14", "3.15", "3.16"))
+        sums = _SUMS + "\n" + "\n".join([*_both("3.16.0", _H["e"], _H["f"])])
+        self.assertEqual(ur.main(root=self.root, fetch=_fetcher(sums=sums)), 0)
+        runtime, vergil = self._files()
+        entries = ur.load_series(runtime)
+        self.assertEqual([e["series"] for e in entries], ["3.14", "3.15", "3.16"])
+        self.assertEqual(entries[2], {"series": "3.16", "cpython": "3.16.0", "pbs_tag": _TAG,
+                                      "sha256": {"x86_64": _H["e"], "aarch64": _H["f"]}})
+        ur.check_packages(ur.load_packages(vergil), entries)
+        new = tomllib.loads(vergil)["package"][2]
+        self.assertEqual(new["name"], "vergil-python3.16")
+        self.assertEqual(new["upstream-version"], f"3.16.0+{_TAG}")
+        self.assertEqual(new["vendor"], "vergil")
+        self.assertEqual(new["staged"], {"build-command": "packaging/build.sh"})
+        self.assertTrue(new["smoke"].startswith("/opt/vergil/python/3.16/bin/python3.16 -c "))
+        # The add lands before the trailing [upstream-refresh] table, which is kept as it was.
+        self.assertTrue(vergil.endswith(_TAIL))
+        self.assertEqual(
+            self._notes(),
+            [f"vergil-python3.14: 3.14.8+{_OLD14} -> 3.14.9+{_TAG}", f"vergil-python3.15: 3.15.1+{_OLD15} -> 3.15.2+{_TAG}",
+             f"added series 3.16 (CPython 3.16.0, PBS {_TAG})"],
+        )
+
+    def test_added_series_takes_its_newest_patch(self):
+        self.window.write_text(_window("3.14", "3.15", "3.16"))
+        sums = _SUMS + "\n" + "\n".join([*_both("3.16.0", _H["e"], _H["f"]), *_both("3.16.1", _H["7"], _H["8"])])
+        ur.main(root=self.root, fetch=_fetcher(sums=sums))
+        self.assertEqual(ur.load_series(self._files()[0])[2]["cpython"], "3.16.1")
+
+    def test_adds_with_every_listed_series_already_current(self):
+        # The add alone is a change: both files are rewritten for it.
+        entries = [dict(_ENTRIES[0], cpython="3.14.9", pbs_tag=_TAG, sha256={"x86_64": _H["a"], "aarch64": _H["b"]}),
+                   dict(_ENTRIES[1], cpython="3.15.2", pbs_tag=_TAG, sha256={"x86_64": _H["c"], "aarch64": _H["d"]})]
+        (self.root / "runtime.toml").write_text(ur.render_runtime(entries))
+        (self.root / "vergil.toml").write_text(_HEAD + _package("3.14", "3.14.9", _TAG) + "\n"
+                                               + _package("3.15", "3.15.2", _TAG) + _TAIL)
+        self.window.write_text(_window("3.14", "3.15", "3.16"))
+        sums = _SUMS + "\n" + "\n".join(_both("3.16.0", _H["e"], _H["f"]))
+        ur.main(root=self.root, fetch=_fetcher(sums=sums))
+        self.assertEqual(self._notes(), [f"added series 3.16 (CPython 3.16.0, PBS {_TAG})"])
+        self.assertEqual(ur.load_series(self._files()[0])[:2], entries)
+        self.assertIn('name = "vergil-python3.16"', self._files()[1])
+
+    def test_never_backfills(self):
+        # The window has 3.12 and 3.13, older than the newest listed series, and PBS ships 3.13: never added.
+        sums = _SUMS + "\n" + "\n".join(_both("3.13.13", _H["e"], _H["f"]) + _both("3.12.20", _H["7"], _H["8"]))
+        self.assertEqual(ur.main(root=self.root, fetch=_fetcher(sums=sums)), 0)
+        runtime, vergil = self._files()
+        self.assertEqual([e["series"] for e in ur.load_series(runtime)], ["3.14", "3.15"])
+        self.assertNotIn("vergil-python3.13", vergil)
+        self.assertNotIn("vergil-python3.12", vergil)
+        self.assertFalse([n for n in self._notes() if "added" in n or "held back" in n])
+
+    def test_back_fill_of_a_gap_never_happens(self):
+        # Listed 3.14 and 3.16 with 3.15 in the window and shipped: 3.15 is older than the leading edge.
+        entries = [_ENTRIES[0], {"series": "3.16", "cpython": "3.16.0", "pbs_tag": _TAG,
+                                 "sha256": {"x86_64": _H["e"], "aarch64": _H["f"]}}]
+        (self.root / "runtime.toml").write_text(ur.render_runtime(entries))
+        (self.root / "vergil.toml").write_text(_HEAD + _package("3.14", "3.14.8", _OLD14) + "\n"
+                                               + _package("3.16", "3.16.0", _TAG) + _TAIL)
+        self.window.write_text(_window("3.14", "3.15", "3.16"))
+        sums = _SUMS + "\n" + "\n".join(_both("3.16.0", _H["e"], _H["f"]))
+        ur.main(root=self.root, fetch=_fetcher(sums=sums))
+        self.assertEqual([e["series"] for e in ur.load_series(self._files()[0])], ["3.14", "3.16"])
+
+    def test_pbs_minor_outside_the_window_is_not_added(self):
         sums = _SUMS + "\n" + "\n".join(_both("3.16.0", _H["e"], _H["f"]))
         self.assertEqual(ur.main(root=self.root, fetch=_fetcher(sums=sums)), 0)
         self.assertEqual([e["series"] for e in ur.load_series(self._files()[0])], ["3.14", "3.15"])
         self.assertNotIn("3.16", self._files()[1])
-        self.assertIn(
-            f"held back: PBS {_TAG} ships CPython 3.16.0, newer than every listed series; "
-            "a new series is added to runtime.toml and vergil.toml by hand",
-            self._notes(),
-        )
+
+    def test_window_version_pbs_lacks_is_held_back(self):
+        self.window.write_text(_window("3.14", "3.15", "3.16"))
+        self.assertEqual(ur.main(root=self.root, fetch=_fetcher()), 0)
+        runtime, vergil = self._files()
+        self.assertEqual([e["series"] for e in ur.load_series(runtime)], ["3.14", "3.15"])
+        self.assertNotIn("vergil-python3.16", vergil)
+        self.assertIn(f"held back: series 3.16 is in the window but PBS {_TAG} does not ship it", self._notes())
+
+    def test_window_version_on_one_arch_is_held_back_not_half_built(self):
+        self.window.write_text(_window("3.14", "3.15", "3.16"))
+        sums = _SUMS + "\n" + _line(_H["e"], "3.16.0", _X86)
+        self.assertEqual(ur.main(root=self.root, fetch=_fetcher(sums=sums)), 0)
+        self.assertNotIn("vergil-python3.16", self._files()[1])
+        self.assertIn(f"held back: series 3.16 is in the window but PBS {_TAG} does not ship it for both architectures",
+                      self._notes())
+
+    def test_newer_window_version_waits_for_a_held_back_one(self):
+        # PBS ships 3.17 but not 3.16: adding 3.17 would leave 3.16 a back-fill that is never added.
+        self.window.write_text(_window("3.14", "3.15", "3.16", "3.17"))
+        sums = _SUMS + "\n" + "\n".join(_both("3.17.0", _H["e"], _H["f"]))
+        ur.main(root=self.root, fetch=_fetcher(sums=sums))
+        self.assertEqual([e["series"] for e in ur.load_series(self._files()[0])], ["3.14", "3.15"])
+        self.assertEqual(self._notes()[2:], [
+            f"held back: series 3.16 is in the window but PBS {_TAG} does not ship it",
+            "held back: series 3.17 is in the window but waits for series 3.16",
+        ])
+
+    def test_window_env_override(self):
+        fetch = _fetcher()
+        ur.main(root=self.root, fetch=fetch)
+        self.assertNotIn(_WINDOW_URL, fetch.calls)
+        self.assertEqual(fetch.calls, [ur.LATEST_URL, ur.sums_url(_TAG)])
+
+    def test_window_fetched_at_the_vergil_ref(self):
+        with mock.patch.dict(os.environ):
+            del os.environ[ur.WINDOW_ENV]
+            fetch = _fetcher(window=_window("3.14", "3.15", "3.16"),
+                             sums=_SUMS + "\n" + "\n".join(_both("3.16.0", _H["e"], _H["f"])))
+            self.assertEqual(ur.main(root=self.root, fetch=fetch), 0)
+        self.assertEqual(fetch.calls, [_WINDOW_URL, ur.LATEST_URL, ur.sums_url(_TAG)])
+        self.assertIn('name = "vergil-python3.16"', self._files()[1])
+
+    def test_missing_window_file_fails(self):
+        self.window.unlink()
+        self._assert_fails_writing_nothing(_fetcher())
+
+    def test_bad_window_schema_fails(self):
+        self.window.write_text(_window("3.14", "3.15", "3.16", schema=2))
+        exc = self._assert_fails_writing_nothing(_fetcher(sums=_SUMS + "\n" + "\n".join(_both("3.16.0", _H["e"], _H["f"]))))
+        self.assertIn("schema 2", str(exc.code))
+
+    def test_failure_after_an_add_writes_nothing(self):
+        # 3.16 would be added, but 3.15's aarch64 asset is missing: neither file changes.
+        self.window.write_text(_window("3.14", "3.15", "3.16"))
+        sums = "\n".join([*_both("3.14.9", _H["a"], _H["b"]), _line(_H["c"], "3.15.2", _X86),
+                          *_both("3.16.0", _H["e"], _H["f"])])
+        self._assert_fails_writing_nothing(_fetcher(sums=sums))
 
     def test_bad_runtime_fails_without_fetching_or_writing(self):
         for runtime in [self.runtime.replace('series = "3.14"', 'series = "3.15"'),

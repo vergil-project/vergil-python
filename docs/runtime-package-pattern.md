@@ -220,12 +220,15 @@ repository has no `[dependency-update].hook`. The hook runs
    releases (that needs the rate-limited GitHub API). This usually means the
    series is past end of life; it is not a failure and does not hold back the
    other series;
-5. writes a note for each series it moved, and a held-back note when the
-   release ships a stable CPython minor newer than every listed series. Those
-   notes become the refresh PR's `## Notes`. It never adds or removes a series.
+5. adds a **leading-edge** series from the version window (see
+   [Adding and removing a series](#adding-and-removing-a-series)). It never
+   back-fills an older series and never removes one;
+6. writes a note for each series it moved or added, and for each window
+   version it held back. Those notes become the refresh PR's `## Notes`.
 
 The rewrite is all-or-nothing. The hook fails, before writing either file, if
-the two files disagree, if the newest PBS release is older than a series'
+the two files disagree, if the version window cannot be read or is not schema
+1, if the newest PBS release is older than a series'
 pinned tag, if it ships only an older patch of a series than the pinned one (a
 downgrade), if `SHA256SUMS` lists two different checksums for one archive or a
 different checksum for an unchanged pin, if a series' chosen patch is missing an
@@ -251,16 +254,34 @@ same package), change:
 
 ## Adding and removing a series
 
-- **Add.** Add the series to both files in one reviewed PR: a `[[series]]`
-  entry in `runtime.toml`, and a `[[package]]` entry in `vergil.toml` with
-  `name` `vergil-python<series>`, `upstream-version`, `summary`, the series'
-  interpreter path in `smoke`, and `[package.staged]
-  build-command = "packaging/build.sh"`. Add a series only once
-  vergil-containers has the version in its window. `packaging/build.sh` refuses
-  an entry in one file without the other. Once the new package is published and
-  the window records it (see
+- **Add (automatic).** A series is added by the upstream-refresh PR. The hook
+  reads the version window: the `in_policy` versions of the `python` family in
+  vergil-containers' `docker/versions/window.json`, at the ref in this
+  repository's `vergil.toml` `[dependencies].vergil`. The `VRG_VERSION_WINDOW`
+  environment variable, when set, names a local `window.json` to read instead.
+  A window version is added only when it is **newer than the newest listed
+  series** and the same PBS release the refresh uses ships it as
+  `install_only_stripped` for both architectures. It is added at its newest
+  patch, to both files together: a `[[series]]` entry in `runtime.toml`, and a
+  `[[package]]` entry after the last one in `vergil.toml`, worded like the
+  others. The note is `added series <X.Y> (CPython <cpython>, PBS <tag>)`.
+  A window version that the release does not ship (or ships for only one
+  architecture) is never added half-built. It gets the note
+  `held back: series <X.Y> is in the window but PBS <tag> does not ship it`,
+  and any newer window version waits for it, so it never becomes a back-fill.
+  Window versions older than the newest listed series are never added, and a
+  stable CPython minor that PBS ships but the window lacks is not added either.
+  What puts a version in the window is vergil-containers adding it and
+  releasing. Once the new package is published and the window records it (see
   [Publishing a series feeds the version window](#publishing-a-series-feeds-the-version-window)),
   unpinned products move to it at their next build.
+- **Add (by hand).** Still possible: add the series to both files in one
+  reviewed PR, a `[[series]]` entry in `runtime.toml` and a `[[package]]` entry
+  in `vergil.toml` with `name` `vergil-python<series>`, `upstream-version`,
+  `summary`, the series' interpreter path in `smoke`, and `[package.staged]
+  build-command = "packaging/build.sh"`. Add a series only once
+  vergil-containers has the version in its window. `packaging/build.sh` refuses
+  an entry in one file without the other.
 - **Remove.** Delete the series' `[[series]]` entry and its `[[package]]` entry
   in one reviewed PR. The series is then no longer built. Its packages already
   published stay in the index until retention ages them out, or for as long as
