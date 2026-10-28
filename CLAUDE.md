@@ -1,120 +1,76 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code when working in this repository.
-
-**Project name**: vergil-python
+# vergil-python
 
 The repo builds one runtime package per listed series. The pins
 (`runtime.toml` `[[series]]` and `vergil.toml` `[[package]]`) are moved by the
 upstream-refresh hook `scripts/dev/upstream-refresh.sh`, which
-`vrg-upstream-refresh` runs; see `docs/runtime-package-pattern.md`.
+`vrg-upstream-refresh` runs.
 
-## Validation
-
-```bash
-vrg-container-run -- vrg-validate
-```
+- Every `runtime.toml` series must have exactly one matching `vergil.toml`
+  `[[package]]` entry; `packaging/build.sh` fails the build if they disagree.
+- The hook rewrites `runtime.toml` whole, header included: it writes
+  `RUNTIME_HEADER` from `scripts/dev/upstream_refresh.py`. Change header comments
+  there as well; comments between entries are lost.
+- The full pattern: `docs/runtime-package-pattern.md`.
 
 <!-- vergil:template:claude-md:begin -->
-## Memory management
+## Memory
 
-Memory is allowed with human approval. The authoritative policy is in
-the user's global `~/.claude/CLAUDE.md` — agents must propose memory
-writes and suggest a destination (repo memory, global CLAUDE.md, or
-plugin/skill issue) before writing. See that file for the full
-workflow.
+Never write, edit or delete memory files without explicit human approval.
+Propose the entry and where it belongs first, then wait for the decision.
 
-Available skills:
-- `/vergil:memory-init` — set up or update the policy header
-  in a project's `MEMORY.md`.
-- `/vergil:memory-audit` — structured collaborative review
-  of memory files.
+## Worktrees
 
-## Parallel AI agent development
+- Sessions always start at the project root, never inside `.worktrees/`.
+- One worktree per issue: `.worktrees/issue-<N>-<slug>/` on branch
+  `feature/<N>-<slug>`. Remove it once its branch lands.
+- The main worktree is read-only; every edit goes through a worktree.
+- Read, Edit and Write use the worktree's absolute path. Bash commands `cd`
+  into the worktree first or use absolute paths.
+- The full convention: <https://github.com/vergil-project/vergil-tooling/blob/develop/docs/specs/worktree-convention.md>.
+- Brief each parallel sub-agent with its [Agent prompt contract](https://github.com/vergil-project/vergil-tooling/blob/develop/docs/specs/worktree-convention.md#agent-prompt-contract).
 
-This repository supports running multiple Claude Code agents in parallel via
-git worktrees. The convention keeps parallel agents' working trees isolated
-while preserving shared project memory (which Claude Code derives from the
-session's starting CWD).
+## Git and GitHub
 
-**Canonical spec:**
-[`vergil-tooling/docs/specs/worktree-convention.md`](https://github.com/vergil-project/vergil-tooling/blob/develop/docs/specs/worktree-convention.md)
-— full rationale, trust model, failure modes, and memory-path implications.
-The canonical text lives in `vergil-tooling`; this section is the local
-on-ramp.
-
-### Structure
-
-```text
-<project-root>/                              ← sessions ALWAYS start here
-  .git/
-  CLAUDE.md, …                               ← main worktree (usually `develop`)
-  .worktrees/                                ← container for parallel worktrees
-    issue-<N>-<short-slug>/                  ← worktree on feature/<N>-<short-slug>
-    …
-```
-
-### Rules
-
-1. **Sessions always start at the project root.**
-   Never start Claude from inside `.worktrees/<name>/`. This keeps the
-   memory-path slug stable and shared.
-2. **Each parallel agent is assigned exactly one worktree.** The session
-   prompt names the worktree (see Agent prompt contract below).
-   - For Read / Edit / Write tools: use the worktree's absolute path.
-   - For Bash commands that touch files: `cd` into the worktree first,
-     or use absolute paths.
-3. **The main worktree is read-only.** All edits flow through a worktree
-   on a feature branch — the logical endpoint of the standing
-   "no direct commits to develop" policy.
-4. **One worktree per issue.** Don't stack in-flight issues. When a
-   branch lands, remove the worktree before starting the next.
-5. **Naming: `issue-<N>-<short-slug>`.** `<N>` is the GitHub issue
-   number; `<short-slug>` is 2–4 kebab-case tokens.
-
-### Agent prompt contract
-
-When launching a parallel-agent session, use this template (fill in the
-placeholders):
-
-```text
-You are working on issue #<N>: <issue title>.
-
-Your worktree is: <project-root>/.worktrees/issue-<N>-<slug>/
-Your branch is:   feature/<N>-<slug>
-
-Rules for this session:
-- Do all git operations from inside your worktree:
-    cd <absolute-worktree-path> && vrg-git <command>
-- For Read / Edit / Write tools, use the absolute worktree path.
-- For Bash commands that touch files, cd into the worktree first
-  or use absolute paths.
-- Do not edit files at the project root. The main worktree is
-  read-only — all changes flow through your worktree on your
-  feature branch.
-- When you need to run validation, run it from inside your worktree
-  (vrg-container-run mounts the current directory).
-```
-
-All fields are required.
-
-## Shell command policy
-
-Use `vrg-git` instead of `git` for all git operations. Use `vrg-gh`
-instead of `gh` for all GitHub CLI operations. These wrappers enforce
-subcommand allowlists, flag deny lists, and credential selection.
-
-Raw `git` and `gh` are denied by the permission model. If a command
-is not available through the wrappers, explain the situation to the
-human who can run it directly via `! <command>` in the prompt.
+Use `vrg-git` and `vrg-gh` only; the hook guard blocks raw `git` and `gh`. If a
+command is not available through the wrappers, explain why and ask the human to
+run it with `! <command>` in the prompt.
 
 ## Validation
 
-```bash
-vrg-container-run -- vrg-validate
-```
+`vrg-container-run -- vrg-validate` is the only validation command. Don't run
+linters, formatters or tests outside it; a tool it doesn't invoke is not part
+of the pipeline.
 
-This is the **only** validation command. Do not run individual linters,
-formatters, or other tools outside of `vrg-validate`. If a tool is not
-invoked by `vrg-validate`, it is not part of the validation pipeline.
+## PR handoff
+
+- Agents never run `vrg-submit-pr`. Submitting, merging and finalizing a PR are
+  human actions.
+- Hand off with `vrg-pr-workflow report-ready --issue <N> --title --summary
+  --notes`. It pushes the branch itself. Leave `--linkage` at its default (`Ref`).
+- A delta touching `.github/workflows/**` makes GitHub refuse the agent push.
+  That is expected: report-ready records the state anyway and the human's
+  `vrg-submit-pr` pushes the branch.
+- After report-ready the branch is frozen: no new commits and no push that
+  advances it; more work is a new follow-up issue. Re-running report-ready to
+  fix the prose is allowed. `vrg-pr-workflow unfreeze` is the only way to lift it.
+- The report-ready title, summary and notes are public (the relay ref is
+  world-readable): never put secrets in them.
+
+## Local settings
+
+`.claude/settings.local.json` must stay absent or exactly `{}`; the agent tools
+refuse otherwise. See the [ownership model](https://github.com/vergil-project/vergil-tooling/blob/develop/docs/site/docs/guides/claude-config-ownership.md).
+
+## Engineering principles
+
+- Correctness over cost over speed. Never ship known-broken code with a
+  follow-up fix; if something is wrong, fix it now.
+- No silent failures: no swallowed exceptions, no `except: return ""`, no
+  fallbacks that hide errors. A failure hidden in code becomes a hallucination
+  at the AI layer.
+
+## paad
+
+paad usage policy and deviations:
+<https://github.com/vergil-project/vergil-claude-plugin/blob/develop/docs/paad-policy.md>.
 <!-- vergil:template:claude-md:end -->
