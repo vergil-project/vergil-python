@@ -19,18 +19,18 @@
 
 [[series]]
 series = "3.14"
-cpython = "3.14.9"
-pbs_tag = "20261021"
+cpython = "3.14.10"
+pbs_tag = "20261026"
 
 [series.sha256]
-x86_64 = "561e91c1cadf30e84aec94d1917384ae3267e5f3e6e135e51fd1578bb19f4064"
-aarch64 = "6f77731d85a14ed848dd4041478cd3ed511523caa3d896b84b436a7edf13cf62"
+x86_64 = "4d3c16c59ed0802a3d1d34d8bce504b15ceeaff39d62dadecc6a9fa803412aed"
+aarch64 = "90f48337bc3dd4ae6eda81e001e4c981236d403b6b5a07778bbdf94ee423dc00"
 
 [[series]]
 series = "3.15"
-cpython = "3.15.1"
-pbs_tag = "20261021"
+cpython = "3.15.2"
+pbs_tag = "20261026"
 
 [series.sha256]
-x86_64 = "01d901e09ca673c99a6c9bd9ec2cfbd58dbe8813d07514c36cb73cfd20b18bd8"
-aarch64 = "6efe65c43ae0bdebebeab4607f91a0053dd36d5e51cfd69a791d544e9b122be7"
+x86_64 = "7b03163a980c607ba8194709d4a4086735a7a9c488cc475b098157306927b36b"
+aarch64 = "0f23351c03b39beb880de668976074fcc3c082d9c3b03d0b43185632b2b270a0"
