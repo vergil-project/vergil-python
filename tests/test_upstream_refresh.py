@@ -166,9 +166,11 @@ class LoadSeriesTest(unittest.TestCase):
 
     def test_committed_runtime_starts_with_runtime_header(self):
         # The hook writes RUNTIME_HEADER, not the file's own header, so a
-        # header comment changed only in runtime.toml would be lost.
-        text = (_REPO / "runtime.toml").read_text()
-        self.assertTrue(text.startswith(ur.RUNTIME_HEADER))
+        # header comment changed only in runtime.toml would be lost. The
+        # rendered-form test implies this; this one names the drift directly
+        # and shows the header diff when it fails.
+        text = (_REPO / "runtime.toml").read_text(encoding="utf-8")
+        self.assertEqual(text[: len(ur.RUNTIME_HEADER)], ur.RUNTIME_HEADER)
 
     def test_committed_files_agree(self):
         entries = ur.load_series((_REPO / "runtime.toml").read_text())
