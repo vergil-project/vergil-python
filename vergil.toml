@@ -25,8 +25,8 @@ vergil = "v2.1"
 builder = "staged"
 vendor = "vergil"
 name = "vergil-python3.14"
-upstream-version = "3.14.9+20261021"
-summary = "Pinned CPython 3.14.9 (python-build-standalone 20261021) for vergil products"
+upstream-version = "3.14.10+20261026"
+summary = "Pinned CPython 3.14.10 (python-build-standalone 20261026) for vergil products"
 smoke = "/opt/vergil/python/3.14/bin/python3.14 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
 
 [package.staged]
@@ -36,8 +36,8 @@ build-command = "packaging/build.sh"
 builder = "staged"
 vendor = "vergil"
 name = "vergil-python3.15"
-upstream-version = "3.15.1+20261021"
-summary = "Pinned CPython 3.15.1 (python-build-standalone 20261021) for vergil products"
+upstream-version = "3.15.2+20261026"
+summary = "Pinned CPython 3.15.2 (python-build-standalone 20261026) for vergil products"
 smoke = "/opt/vergil/python/3.15/bin/python3.15 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
 
 [package.staged]
