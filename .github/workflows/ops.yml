@@ -2,7 +2,7 @@ name: Ops
 
 on:
   schedule:
-    - cron: '26 6 * * *'
+    - cron: '26 1 * * *'
   workflow_dispatch:
 
 permissions:
