@@ -235,7 +235,11 @@ different checksum for an unchanged pin, if a series' chosen patch is missing an
 archive (or a readable checksum) for either architecture, or if either file
 does not have the layout it expects. One series' failure stops the whole run, so
 there is never a partial rewrite across series. The hook rewrites
-`runtime.toml` whole, so comments belong in its header. Its offline unit tests
+`runtime.toml` whole, header included: it writes the `RUNTIME_HEADER` constant
+from `scripts/dev/upstream_refresh.py`, not the file's existing header. Change
+a header comment in `RUNTIME_HEADER` and in `runtime.toml` together; a comment
+changed only in `runtime.toml`, or put between entries, is lost on the next
+refresh. Its offline unit tests
 are `tests/test_upstream_refresh.py`, run by `tests/check-upstream-refresh.sh`.
 
 ### By hand

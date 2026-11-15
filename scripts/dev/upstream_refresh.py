@@ -87,8 +87,10 @@ RUNTIME_HEADER = """\
 # vergil-python<series>, with upstream-version = "<cpython>+<pbs_tag>".
 # packaging/build.sh fails the build if the two files disagree. The
 # upstream-refresh hook (scripts/dev/upstream-refresh.sh) rewrites this file
-# whole, so comments go here, never between entries. See
-# docs/runtime-package-pattern.md.
+# whole, header included: this header is RUNTIME_HEADER in
+# scripts/dev/upstream_refresh.py. Change a comment there and here together;
+# a comment changed only here, or put between entries, is lost on the next
+# refresh. See docs/runtime-package-pattern.md.
 """
 
 Fetch = Callable[[str], str]

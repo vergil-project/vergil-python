@@ -84,7 +84,7 @@ sudo dnf install vergil-python3.15   # RHEL
 | `tests/check-upstream-refresh.sh` | Runs those tests in the dev container. |
 | `tests/test_build.py` | Offline tests for `packaging/build.sh`: series selection, the consistency checks, the install root and the build matrix. |
 | `tests/check-build.sh` | Runs those tests in the dev container. |
-| `scripts/bin/validate-custom` | Repo-specific checks that `vrg-validate` runs as its `custom` stage; runs `tests/check-upstream-refresh.sh` and `tests/check-build.sh`. |
+| `scripts/bin/validate-custom` | Repo-specific checks that `vrg-validate` runs as its `custom` stage; runs `tests/check-upstream-refresh.sh` and `tests/check-build.sh`. It also runs in PR CI as the `quality / custom` job (from vergil-actions v2.1.58), whose log is `quality-custom.log` in the `quality / evidence` artifact. |
 | `docs/runtime-package-pattern.md` | Why the runtime is packaged this way, and how to change it. |
 
 ## License

@@ -17,17 +17,12 @@
       }
     ]
   },
-  "extraKnownMarketplaces": {
-    "vergil-marketplace": {
-      "source": {
-        "source": "github",
-        "repo": "vergil-project/vergil-claude-plugin",
-        "ref": "main"
-      }
-    }
-  },
   "enabledPlugins": {
     "vergil@vergil-marketplace": true
   },
-  "attribution": { "commit": "", "pr": "" }
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "idleCompaction": false
 }
