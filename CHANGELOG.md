@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.5] - 2026-11-15
+
+### CI
+
+- move the nightly ops cron to the 01:xx UTC hour (#83)
+
+### Chores
+
+- sync the vergil-managed .gitignore block (#66)
+- sync the vergil-managed .gitignore block (#71)
+- refresh upstream inputs (#67)
+- sync the hook guard shim with the managed copy (#77)
+- sync the managed .claude/settings.json (#79)
+- sync the managed files with the released templates (#81)
+
+### Documentation
+
+- note that validate-custom runs in PR CI as quality / custom (#64)
+- steering and settings sweep (epic 558) (#69)
+- say the runtime.toml header comes from RUNTIME_HEADER (#73)
+- sync the template's build/ exception line (#75)
+
 ## [1.0.4] - 2026-10-26
 
 ### CI
