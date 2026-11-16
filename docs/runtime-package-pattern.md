@@ -191,14 +191,22 @@ archive through a stand-in `curl`, so they never touch the network.
 
 ## Changing the pins
 
-Every pin change is one reviewed PR. Normally the PR is opened for you.
+Every pin change is one PR. Normally the upstream refresh opens it, and it
+merges itself once CI passes. A change the refresh cannot make, such as
+dropping a series, is a human's reviewed PR.
 
 ### The upstream-refresh hook
 
 `vergil.toml` names `scripts/dev/upstream-refresh.sh` as this repository's
 `[upstream-refresh].hook`. `vrg-upstream-refresh` runs it on a clean checkout of
-`develop` and keeps exactly one `upstream-refresh` PR in step with what it
-changed; a human reviews and merges it. It is separate from the dependency
+`develop`, from the scheduled `upstream-refresh` job in
+`.github/workflows/ops.yml`. Before anything is pushed, its path fence checks
+the change against `[upstream-refresh].paths` in `vergil.toml` (see
+[The path fence](#the-path-fence)). It then opens a PR on a new
+`automation/upstream-refresh/<run-id>` branch, closing an earlier run's open
+one, and merges it as the org automation App once CI passes; no human reviews
+or merges it (epic `vergil-project/.github#1168`). A run is red when the fence
+refuses the change or the PR does not merge. It is separate from the dependency
 update: `vrg-release`'s `update-deps` stage never touches the series, and this
 repository has no `[dependency-update].hook`. The hook runs
 `scripts/dev/upstream_refresh.py`, which:
@@ -239,8 +247,38 @@ there is never a partial rewrite across series. The hook rewrites
 from `scripts/dev/upstream_refresh.py`, not the file's existing header. Change
 a header comment in `RUNTIME_HEADER` and in `runtime.toml` together; a comment
 changed only in `runtime.toml`, or put between entries, is lost on the next
-refresh. Its offline unit tests
-are `tests/test_upstream_refresh.py`, run by `tests/check-upstream-refresh.sh`.
+refresh. A header that differs from `RUNTIME_HEADER` also gets the next
+refresh refused, since the fence admits no comment line in `runtime.toml`. Its
+offline unit tests are `tests/test_upstream_refresh.py`, run by
+`tests/check-upstream-refresh.sh`.
+
+### The path fence
+
+No human reviews a refresh PR before it merges, so `vrg-upstream-refresh`
+treats the hook's change as untrusted and refuses any patch outside
+`[upstream-refresh].paths` in `vergil.toml`. The full rules are in
+vergil-tooling's
+[upstream-refresh reference](https://vergil-project.github.io/vergil-tooling/latest/reference/upstream-refresh-config/#the-path-fence).
+In this repository:
+
+- **`runtime.toml`** is under a line rule: every added and removed line must
+  be one the hook writes (`[[series]]`, `[series.sha256]`, `series`,
+  `cpython`, `pbs_tag`, the two checksums, or a blank line). Each block is
+  named by its `series` value, and its `cpython` and `pbs_tag` may not go
+  down. A new `[[series]]` block is allowed.
+- **`vergil.toml`** is under the fence's own rules: only `upstream-version`
+  and `summary` of an existing `[[package]]` entry may change, and a new entry
+  must be a copy of an existing one with the series replaced. Nothing outside
+  `[[package]]` may change.
+- **A refresh never removes a series.** It never drops an existing
+  `[[series]]` block or `[[package]]` entry: dropping a series is a human
+  change (see [Adding and removing a series](#adding-and-removing-a-series)).
+
+The fence limits which files change. What goes into them is checked by PR CI,
+in required status checks on `develop`: `package / evidence` runs
+`packaging/build.sh` for every package, which fails if the two files disagree
+and verifies each archive against its pinned checksum, and `quality / evidence`
+runs `tests/test_build.py`, which checks that the committed files agree.
 
 ### By hand
 
@@ -287,7 +325,9 @@ same package), change:
   vergil-containers has the version in its window. `packaging/build.sh` refuses
   an entry in one file without the other.
 - **Remove.** Delete the series' `[[series]]` entry and its `[[package]]` entry
-  in one reviewed PR. The series is then no longer built. Its packages already
+  in one reviewed PR. Removing a series is always a human change: the upstream
+  refresh never removes one, and its path fence refuses a patch that does. The
+  series is then no longer built. Its packages already
   published stay in the index until retention ages them out, or for as long as
   a retained consumer depends on them.
 
