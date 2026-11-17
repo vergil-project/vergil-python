@@ -53,10 +53,15 @@ build-command = "packaging/build.sh"
 #   `cpython`, `pbs_tag`, the two checksums, or blank). The `series` value is
 #   the anchor that names each [[series]] block; the hook writes it before the
 #   block's versioned lines. `cpython` (`version`) and `pbs_tag`
-#   (`version_pbs`) may not go down within their block. A new block is
-#   allowed; removing one is refused. The header comment is not admitted, so
-#   a header in runtime.toml that differs from RUNTIME_HEADER in
-#   scripts/dev/upstream_refresh.py gets the next refresh refused.
+#   (`version_pbs`) may not go down within their block. The two checksums
+#   (`hash`) sit in the block's [series.sha256] table, below its `series`
+#   line, and may change only when that block's `cpython` or `pbs_tag`
+#   changes in the same patch; a checksum pinned for the first time, in a
+#   new block, is allowed. A new block is allowed; removing one is refused,
+#   and so is dropping a checksum from a block that stays. The header
+#   comment is not admitted, so a header in runtime.toml that differs from
+#   RUNTIME_HEADER in scripts/dev/upstream_refresh.py gets the next refresh
+#   refused.
 # - vergil.toml, under the fence's own rules: only upstream-version and summary
 #   of an existing [[package]] may change, and a new entry must be a series
 #   copy of an existing one. Nothing outside [[package]] may change.
@@ -73,6 +78,6 @@ build-command = "packaging/build.sh"
 [upstream-refresh]
 hook = "scripts/dev/upstream-refresh.sh"
 paths = [
-  { path = "runtime.toml", lines = '^(\[\[series\]\]|\[series\.sha256\]|series = "(?P<anchor>\d+\.\d+)"|cpython = "(?P<version>\d+\.\d+\.\d+)"|pbs_tag = "(?P<version_pbs>\d{8})"|x86_64 = "[0-9a-f]{64}"|aarch64 = "[0-9a-f]{64}"|)$' },
+  { path = "runtime.toml", lines = '^(\[\[series\]\]|\[series\.sha256\]|series = "(?P<anchor>\d+\.\d+)"|cpython = "(?P<version>\d+\.\d+\.\d+)"|pbs_tag = "(?P<version_pbs>\d{8})"|(x86_64|aarch64) = "(?P<hash>[0-9a-f]{64})"|)$' },
   "vergil.toml",
 ]

@@ -265,7 +265,10 @@ In this repository:
   be one the hook writes (`[[series]]`, `[series.sha256]`, `series`,
   `cpython`, `pbs_tag`, the two checksums, or a blank line). Each block is
   named by its `series` value, and its `cpython` and `pbs_tag` may not go
-  down. A new `[[series]]` block is allowed.
+  down. The two checksums in a block's `[series.sha256]` table may change
+  only when that block's `cpython` or `pbs_tag` changes in the same patch, so
+  a refresh cannot swap an archive's checksum while keeping its version. A
+  new `[[series]]` block, checksums included, is allowed.
 - **`vergil.toml`** is under the fence's own rules: only `upstream-version`
   and `summary` of an existing `[[package]]` entry may change, and a new entry
   must be a copy of an existing one with the series replaced. Nothing outside
