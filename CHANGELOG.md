@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.0.6] - 2026-11-17
+
+### Chores
+
+- sync the managed files with the released templates (#87)
+- add the path-fence allowlist and say refresh PRs merge themselves (#89)
+- refresh upstream inputs (#91)
+- let a runtime.toml checksum change only with its series' version (#92)
+
 ## [1.0.5] - 2026-11-15
 
 ### CI
