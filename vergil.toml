@@ -25,8 +25,8 @@ vergil = "v2.1"
 builder = "staged"
 vendor = "vergil"
 name = "vergil-python3.14"
-upstream-version = "3.14.10+20261026"
-summary = "Pinned CPython 3.14.10 (python-build-standalone 20261026) for vergil products"
+upstream-version = "3.14.10+20261110"
+summary = "Pinned CPython 3.14.10 (python-build-standalone 20261110) for vergil products"
 smoke = "/opt/vergil/python/3.14/bin/python3.14 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
 
 [package.staged]
@@ -36,12 +36,48 @@ build-command = "packaging/build.sh"
 builder = "staged"
 vendor = "vergil"
 name = "vergil-python3.15"
-upstream-version = "3.15.2+20261026"
-summary = "Pinned CPython 3.15.2 (python-build-standalone 20261026) for vergil products"
+upstream-version = "3.15.2+20261110"
+summary = "Pinned CPython 3.15.2 (python-build-standalone 20261110) for vergil products"
 smoke = "/opt/vergil/python/3.15/bin/python3.15 -c 'import ssl, sqlite3, ctypes, zlib; print(ssl.OPENSSL_VERSION)'"
 
 [package.staged]
 build-command = "packaging/build.sh"
 
+# vrg-upstream-refresh runs the hook in the scheduled ops.yml job and opens a
+# PR that merges itself once CI passes; no human reviews it first (epic
+# vergil-project/.github#1168, spec §6). Before anything is pushed, the path
+# fence checks the hook's patch against `paths`, the files the hook may change:
+#
+# - runtime.toml, under a line rule: every added and removed line must be one
+#   of the lines the hook writes (`[[series]]`, `[series.sha256]`, `series`,
+#   `cpython`, `pbs_tag`, the two checksums, or blank). The `series` value is
+#   the anchor that names each [[series]] block; the hook writes it before the
+#   block's versioned lines. `cpython` (`version`) and `pbs_tag`
+#   (`version_pbs`) may not go down within their block. The two checksums
+#   (`hash`) sit in the block's [series.sha256] table, below its `series`
+#   line, and may change only when that block's `cpython` or `pbs_tag`
+#   changes in the same patch; a checksum pinned for the first time, in a
+#   new block, is allowed. A new block is allowed; removing one is refused,
+#   and so is dropping a checksum from a block that stays. The header
+#   comment is not admitted, so a header in runtime.toml that differs from
+#   RUNTIME_HEADER in scripts/dev/upstream_refresh.py gets the next refresh
+#   refused.
+# - vergil.toml, under the fence's own rules: only upstream-version and summary
+#   of an existing [[package]] may change, and a new entry must be a series
+#   copy of an existing one. Nothing outside [[package]] may change.
+#
+# A refresh never removes an existing [[series]] block or [[package]] entry:
+# dropping a series is a human change, made in an ordinary PR.
+#
+# The fence limits which files change. What goes into them is checked by PR
+# CI, in required status checks on develop: `package / evidence` runs
+# packaging/build.sh for every package, which fails if runtime.toml and
+# vergil.toml disagree and verifies each archive against its pinned checksum;
+# `quality / evidence` runs tests/test_build.py (through
+# scripts/bin/validate-custom), which checks that the committed files agree.
 [upstream-refresh]
 hook = "scripts/dev/upstream-refresh.sh"
+paths = [
+  { path = "runtime.toml", lines = '^(\[\[series\]\]|\[series\.sha256\]|series = "(?P<anchor>\d+\.\d+)"|cpython = "(?P<version>\d+\.\d+\.\d+)"|pbs_tag = "(?P<version_pbs>\d{8})"|(x86_64|aarch64) = "(?P<hash>[0-9a-f]{64})"|)$' },
+  "vergil.toml",
+]

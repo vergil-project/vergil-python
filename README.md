@@ -56,8 +56,8 @@ The pins live in two files, and they are the only source of truth:
 
 They are not repeated here because they change often. This repository's
 upstream-refresh hook, run by `vrg-upstream-refresh`, moves both files together
-to the newest PBS build and CPython patch within each series, in one reviewed
-PR. See [Changing the pins](docs/runtime-package-pattern.md#changing-the-pins).
+to the newest PBS build and CPython patch within each series, in one PR that
+merges itself once CI passes. Dropping a series is a human change. See [Changing the pins](docs/runtime-package-pattern.md#changing-the-pins).
 
 ## Install
 
