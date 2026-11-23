@@ -345,10 +345,10 @@ vergil-actions `cd-release.yml` reusable workflow:
   `package-sign` job signs each `.rpm` and attests the provenance of every
   package there before the release attaches them. The `.deb` files are
   covered by the signed apt index.
-- **`cd.yml` must pass `secrets: inherit`**, with its
-  `# nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit`
-  comment. Environment secrets reach a job in a cross-repo reusable workflow
-  only through `inherit`. With an explicit `secrets:` map, `package-sign` sees
+- **`cd.yml` must pass `secrets: inherit`.** Environment secrets reach a job
+  in a cross-repo reusable workflow only through `inherit`, which
+  `vrg-validate`'s `secrets-inherit` check allows only for the App-key
+  workflows, `cd-release.yml` among them. With an explicit `secrets:` map, `package-sign` sees
   an empty `PACKAGE_SIGNING_KEY` and fails.
 - **The index is rebuilt after the release.** Once a new release is created,
   `cd-release` dispatches `package-released` to `vergil-project/packages`. Its

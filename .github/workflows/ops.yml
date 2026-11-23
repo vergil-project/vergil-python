@@ -15,9 +15,10 @@ jobs:
     permissions:
       contents: read
       issues: write
-    secrets:
-      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+    # `inherit` is required: the App keys are `automation` environment
+    # secrets, which reach a cross-repo reusable workflow only through
+    # `secrets: inherit` (probe in vergil-project/packages#6).
+    secrets: inherit
 
   # Runs vrg-upstream-refresh (epics vergil-project/.github#472 and #1168). The
   # [upstream-refresh].hook in vergil.toml refreshes each listed series in
@@ -28,10 +29,10 @@ jobs:
   # refuses the change or the PR does not merge. A refresh never removes a
   # series: dropping one is a human change. The App token is minted inside the
   # reusable workflow, so this job's GITHUB_TOKEN needs only contents: read.
+  # Its App keys are `automation` environment secrets, passed with `inherit`
+  # as for github-config above.
   upstream-refresh:
     uses: vergil-project/vergil-actions/.github/workflows/ops-upstream-refresh.yml@v2.1
     permissions:
       contents: read
-    secrets:
-      APP_CLIENT_ID: ${{ secrets.APP_CLIENT_ID }}
-      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+    secrets: inherit
