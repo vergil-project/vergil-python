@@ -25,4 +25,4 @@ jobs:
     # package-sign job sees an empty PACKAGE_SIGNING_KEY. The callee is
     # first-party (same org); it also uses APP_CLIENT_ID / APP_PRIVATE_KEY for
     # the package-released dispatch (spec §8.2).
-    secrets: inherit  # nosemgrep: yaml.github-actions.security.secrets-inherit.secrets-inherit
+    secrets: inherit
