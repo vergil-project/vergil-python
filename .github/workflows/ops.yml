@@ -36,3 +36,18 @@ jobs:
     permissions:
       contents: read
     secrets: inherit
+
+  # The daily audit of agent merges (epic vergil-project/.github#1384, spec
+  # §4.8). It runs vrg-agent-audit for this repo as the org automation App and
+  # moves the vergil/agent-audit/* markers; hoshin reads it by the job name
+  # `agent-audit`. It is a security-signal job: it files no issue, so it needs
+  # only contents: read. It runs after github-config, but `!cancelled()` keeps
+  # a failed config job from skipping it. Its App keys are `automation`
+  # environment secrets, passed with `inherit` as for github-config above.
+  agent-audit:
+    needs: github-config
+    if: ${{ !cancelled() }}
+    uses: vergil-project/vergil-actions/.github/workflows/ops-agent-audit.yml@v2.1
+    permissions:
+      contents: read
+    secrets: inherit
